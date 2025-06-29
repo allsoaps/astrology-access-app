@@ -128,35 +128,7 @@ Private Sub btnEdit_Click()
       openArgs:=CStr(pid)
 End Sub
 
-'=== View Natal Chart ===
-Private Sub btnViewChart_Click()
-'    Dim pid As Long
-'    pid = Nz(Me.lstEvents.Value, 0)
-'    If pid = 0 Then
-'        MsgBox "Please select an event to view chart.", vbInformation, "No Selection"
-'        Exit Sub
-'    End If
-'    If Not ChartGenerated(pid) Then
-'        MsgBox "Natal chart not yet generated. Please generate it first.", vbInformation, "No Chart"
-'        Exit Sub
-'    End If
-'    DoCmd.OpenForm "frmChartViewer", WhereCondition:="PersonID=" & pid
 
-'Private Sub cmdViewAspectGrid_Click()
-    Dim chartID As Long
-    
-    ' Get current chart ID (adjust this based on your form)
-'    chartID = Me.chartID
-chartID = 11
-    
-    If chartID > 0 Then
-        ShowChartAspectGrid chartID
-    Else
-        MsgBox "Please select a chart first.", vbInformation
-    End If
-'End Sub
-
-End Sub
 
 '=== Helper to check chart status ===
 Private Function ChartGenerated(PersonID As Long) As Boolean
