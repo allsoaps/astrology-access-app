@@ -1,0 +1,24 @@
+? modSimpleChart.GenerateNatalChart(19)
+
+? modSwissItems.GetCompletePlanetData(2460000, 0)
+
+Quick Orb Verification
+To verify the orb calculations are working correctly, check one aspect in your tblChartAspects table:
+
+Find any aspect record (pick one with a small ExactDegree, like 2.5°)
+Look up the two planets (Body1ID and Body2ID) in tblChartPositions
+Manually calculate: |Planet1_Longitude - Planet2_Longitude|
+Check: Does this difference approximately match the aspect angle ± ExactDegree?
+
+Example:
+
+If Sun=45° and Moon=135°, difference = 90° = Square aspect ✓
+If ExactDegree=2.5°, then it's 2.5° away from a perfect square ✓
+
+
+For Collaboration/AI Assistance:
+
+Share repository URL
+Reference specific files: "See modSimpleChart.bas lines 150-200"
+Use Issues for tracking features/bugs
+Use Releases for major milestones
