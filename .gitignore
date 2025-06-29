@@ -1,0 +1,23 @@
+# Access Database Files
+*.accdb
+*.accde
+*.laccdb
+*.mdb
+*.mde
+
+# Temporary files
+*.tmp
+*.temp
+~$*
+
+# Personal API keys (create template instead)
+api-keys.txt
+secrets.txt
+
+# Cache files
+Thumbs.db
+.DS_Store
+
+# Backup files  
+*.bak
+*.backup

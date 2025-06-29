@@ -22,3 +22,30 @@ Share repository URL
 Reference specific files: "See modSimpleChart.bas lines 150-200"
 Use Issues for tracking features/bugs
 Use Releases for major milestones
+
+BEST PRACTICES
+
+Commit Messages
+	feat: Add event chart generation
+	fix: Correct aspect orb calculations
+	docs: Update setup instructions
+	refactor: Optimize aspect grid population
+	
+File Naming
+	Use consistent naming: modChartCalculations.bas
+	Include version/date in file headers
+	Document dependencies between modules
+	
+Documentation
+	Keep README files updated
+	Document breaking changes
+	Include setup instructions for new developers
+	Screenshot major UI components
+	
+Benefits for Your Project
+	Version Control: Track all changes to your code
+	Backup: Cloud-based backup of all project files
+	Collaboration: Easy sharing with AI assistants or other developers
+	Documentation: Centralized project knowledge
+	Release Management: Track completed features and versions
+	Issue Tracking: Organize bugs and feature requests
