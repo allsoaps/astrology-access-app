@@ -1,0 +1,11 @@
+﻿AspectID,AspectName,Angle,OrbitMajor,OrbitMinor,AspectType,Symbol,Interpretation,SymbolCode
+1,Conjunction,0,10,6,Major,☌,,9740
+2,Opposition,180,10,6,Major,☍,,9741
+3,Square,90,8,5,Major,□,,9633
+4,Semi-square,45,3,2,Harmonic,∠,,8736
+5,Trine,120,8,5,Major,△,,9651
+6,Sextile,60,6,3,Major,⚹,,9913
+7,Semisextile,30,3,2,Minor,⚺,,9914
+8,Quincunx,150,2,1,Minor,⚻,,9915
+9,Sesquisquare,135,3,2,Harmonic,⚼,,9916
+10,Quindecile,165,1,0.5,Harmonic,⧆,,10694

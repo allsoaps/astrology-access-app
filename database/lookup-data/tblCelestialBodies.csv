@@ -1,0 +1,19 @@
+﻿BodyID,BodyName,BodyType,SwissEphID,DisplayOrder,IsActive,Symbol
+1,Sun,Planet,0,1,TRUE,☉
+2,Moon,Planet,1,2,TRUE,☽
+3,Mercury,Planet,2,3,TRUE,☿
+4,Venus,Planet,3,4,TRUE,♀
+5,Mars,Planet,4,5,TRUE,♂
+6,Jupiter,Planet,5,6,TRUE,♃
+7,Saturn,Planet,6,7,TRUE,♄
+8,Uranus,Planet,7,8,TRUE,♅
+9,Neptune,Planet,8,9,TRUE,♆
+10,Pluto,Planet,9,10,TRUE,♇
+11,North Node,Node,11,11,TRUE,☊
+12,South Node,Node,10,12,TRUE,☋
+13,Chiron,Asteroid,15,13,TRUE,⚷
+14,Ceres,Asteroid,17,14,TRUE,⚳
+15,Ascendant,Angle,-1,16,TRUE,As
+16,Mid Heaven,Angle,-2,17,TRUE,Mc
+17,Descendant,Angle,-3,18,TRUE,Ds
+18,Imum Coeli,Angle,-4,19,TRUE,Ic

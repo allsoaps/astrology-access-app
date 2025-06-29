@@ -1,0 +1,13 @@
+﻿SignID,SignName,Element,Quality,Ruler,Symbol,StartDegree,EndDegree
+1,Aries,Fire,Cardinal,5,♈,0,30
+2,Taurus,Earth,Fixed,4,♉,30,60
+3,Gemini,Air,Mutable,3,♊,60,90
+4,Cancer,Water,Cardinal,2,♋,90,120
+5,Leo,Fire,Fixed,1,♌,120,150
+6,Virgo,Earth,Mutable,3,♍,150,180
+7,Libra,Air,Cardinal,4,♎,180,210
+8,Scorpio,Water,Fixed,5,♏,210,240
+9,Sagittarius,Fire,Mutable,6,♐,240,270
+10,Capricorn,Earth,Cardinal,7,♑,270,300
+11,Aquarius,Air,Fixed,8,♒,300,330
+12,Pisces,Water,Mutable,9,♓,330,360

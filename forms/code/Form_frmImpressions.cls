@@ -1,0 +1,379 @@
+VERSION 1.0 CLASS
+BEGIN
+  MultiUse = -1  'True
+END
+Attribute VB_Name = "Form_frmImpressions"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = True
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Option Compare Database
+Option Explicit
+
+' Form-level variables
+Private m_SessionID As Long
+
+'================'
+' FORM EVENTS    '
+'================'
+
+Private Sub Form_Open(Cancel As Integer)
+    ' Get the SessionID from OpenArgs
+    If Not IsNull(Me.openArgs) And IsNumeric(Me.openArgs) Then
+        m_SessionID = CLng(Me.openArgs)
+        Debug.Print "Form_Open: SessionID = " & m_SessionID
+    Else
+        MsgBox "Error: No valid SessionID provided.", vbCritical, "Form Error"
+        Cancel = True
+        Exit Sub
+    End If
+End Sub
+
+Private Sub Form_Load()
+    On Error GoTo ErrorHandler
+    
+    Debug.Print "Form_Load: Starting..."
+    
+    ' Simple direct binding to main table with filter
+    Dim recordSourceSQL As String
+    recordSourceSQL = "SELECT * FROM tblImpressions " & _
+                     "WHERE SessionID = " & m_SessionID & _
+                     " AND (DateDeleted IS NULL OR DateDeleted = #1/1/1900#) " & _
+                     "ORDER BY SketchID"
+    
+    Debug.Print "Form_Load: Setting RecordSource = " & recordSourceSQL
+    Me.RecordSource = recordSourceSQL
+    
+    ' Force a requery to ensure data loads
+    Me.Requery
+    
+    ' Minimal control setup
+    SetupControls
+    LoadSessionInfo
+    
+    ' Debug: Check if records were loaded
+    Debug.Print "Form_Load: Complete. RecordCount = " & Me.RecordsetClone.recordCount
+    If Me.RecordsetClone.recordCount > 0 Then
+        Debug.Print "Form_Load: Records found, moving to first record"
+        DoCmd.GoToRecord , , acFirst
+    Else
+        Debug.Print "Form_Load: No records found, going to new record"
+        DoCmd.GoToRecord , , acNewRec
+    End If
+    
+    Exit Sub
+
+ErrorHandler:
+    MsgBox "Error loading impressions form: " & Err.Description, vbCritical, "Form Load Error"
+    Debug.Print "Form_Load Error: " & Err.Description
+End Sub
+
+' Immediately assign SketchID when user starts entering data
+Private Sub cboPerception_BeforeUpdate(Cancel As Integer)
+    AssignSketchIDIfNeeded
+End Sub
+
+Private Sub txtSuccess_BeforeUpdate(Cancel As Integer)
+    AssignSketchIDIfNeeded
+End Sub
+
+'================'
+' BUTTON EVENTS  '
+'================'
+
+Private Sub btnClose_Click()
+    ' Always warn user about losing changes
+    If MsgBox("All unsaved changes will be lost. Are you sure you want to close?", _
+              vbYesNo + vbQuestion + vbDefaultButton2, "Close Form") = vbYes Then
+        
+        ' User confirmed - close without saving
+        ' Cancel any pending edits
+        If Me.Dirty Then
+            DoCmd.RunCommand acCmdUndo
+        End If
+        
+        DoCmd.Close acForm, Me.name, acSaveNo
+    End If
+    ' If user clicks No, do nothing (stay on form)
+End Sub
+
+Private Sub btnSave_Click()
+    ' Simple, reliable save all
+    On Error GoTo ErrorHandler
+    
+    ' Validate all visible records first
+    If Not ValidateAllRecords() Then Exit Sub
+    
+    ' Force save any pending edits
+    If Me.Dirty Then
+        DoCmd.RunCommand acCmdSaveRecord
+    End If
+    
+    ' Simple requery to refresh
+    Me.Requery
+    
+    MsgBox "All impressions saved successfully!", vbInformation, "Save Complete"
+    Exit Sub
+
+ErrorHandler:
+    MsgBox "Error saving impressions: " & Err.Description, vbCritical, "Save Error"
+    Debug.Print "btnSave_Click Error: " & Err.Description
+End Sub
+
+Private Sub btnAddNew_Click()
+    ' Force save current record first
+    If Me.Dirty Then
+        DoCmd.RunCommand acCmdSaveRecord
+    End If
+    
+    DoCmd.GoToRecord , , acNewRec
+    Me.cboPerception.SetFocus
+End Sub
+
+Private Sub btnDelete_Click()
+    If Me.NewRecord Then
+        MsgBox "Cannot delete a new record.", vbInformation, "Delete Record"
+        Exit Sub
+    End If
+    
+    If MsgBox("Are you sure you want to delete this impression?", vbYesNo + vbQuestion, "Confirm Delete") = vbYes Then
+        ' Soft delete
+        Me.DateDeleted = Now()
+        DoCmd.RunCommand acCmdSaveRecord
+        Me.Requery
+    End If
+End Sub
+
+'================'
+' HELPER SUBS    '
+'================'
+
+Private Sub AssignSketchIDIfNeeded()
+    ' Assign SketchID immediately when user starts entering data
+    On Error GoTo ErrorHandler
+    
+    If Me.NewRecord Then
+        ' Check if SketchID is already assigned
+        If IsNull(Me.txtSketchID) Or Me.txtSketchID = 0 Then
+            Dim nextSketchID As Long
+            nextSketchID = GetNextSketchIDForSession(m_SessionID)
+            
+            Debug.Print "AssignSketchIDIfNeeded: Assigning SketchID " & nextSketchID & " for SessionID " & m_SessionID
+            Me.txtSketchID = nextSketchID
+            Me.SessionID = m_SessionID
+            Me.DateCreated = Now()
+            
+            Debug.Print "AssignSketchIDIfNeeded: Successfully assigned SketchID " & nextSketchID
+        Else
+            Debug.Print "AssignSketchIDIfNeeded: SketchID already assigned: " & Me.txtSketchID
+        End If
+    Else
+        Debug.Print "AssignSketchIDIfNeeded: Not a new record, current SketchID: " & Nz(Me.txtSketchID, "NULL")
+    End If
+    
+    Exit Sub
+
+ErrorHandler:
+    Debug.Print "AssignSketchIDIfNeeded Error: " & Err.Description
+    Debug.Print "AssignSketchIDIfNeeded: SessionID=" & m_SessionID & ", attempted SketchID=" & nextSketchID
+End Sub
+
+Private Function GetNextSketchIDForSession(SessionID As Long) As Long
+    ' Get the next available SketchID for this session
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    
+    Set db = CurrentDb()
+    
+    ' Debug: Show current records
+    Set rs = db.OpenRecordset("SELECT SketchID FROM tblImpressions " & _
+                             "WHERE SessionID = " & SessionID & _
+                             " AND (DateDeleted IS NULL OR DateDeleted = #1/1/1900#) " & _
+                             "ORDER BY SketchID")
+    
+    Debug.Print "GetNextSketchIDForSession: Existing SketchIDs for SessionID " & SessionID & ":"
+    Do While Not rs.EOF
+        Debug.Print "  - SketchID: " & rs!SketchID
+        rs.MoveNext
+    Loop
+    rs.Close
+    
+    ' Get the max SketchID
+    Set rs = db.OpenRecordset("SELECT MAX(SketchID) AS MaxSketch FROM tblImpressions " & _
+                             "WHERE SessionID = " & SessionID & _
+                             " AND (DateDeleted IS NULL OR DateDeleted = #1/1/1900#)")
+    
+    If IsNull(rs!MaxSketch) Then
+        GetNextSketchIDForSession = 1  ' First record for this session
+        Debug.Print "GetNextSketchIDForSession: No existing records, assigning SketchID = 1"
+    Else
+        GetNextSketchIDForSession = rs!MaxSketch + 1  ' Increment for this session
+        Debug.Print "GetNextSketchIDForSession: Max existing SketchID = " & rs!MaxSketch & ", assigning SketchID = " & GetNextSketchIDForSession
+    End If
+    
+    rs.Close
+    Set rs = Nothing
+    Set db = Nothing
+End Function
+
+Private Function ValidateAllRecords() As Boolean
+    ' Simple validation - check current record only
+    ValidateAllRecords = True
+    
+    If Me.NewRecord Then Exit Function
+    
+    If IsNull(Me.cboPerception) Or Me.cboPerception = "" Then
+        MsgBox "Perception is required for all records.", vbExclamation, "Required Field"
+        Me.cboPerception.SetFocus
+        ValidateAllRecords = False
+        Exit Function
+    End If
+    
+    If IsNull(Me.txtSuccess) Or Me.txtSuccess = "" Then
+        MsgBox "Success is required for all records.", vbExclamation, "Required Field"
+        Me.txtSuccess.SetFocus
+        ValidateAllRecords = False
+        Exit Function
+    End If
+End Function
+
+Private Sub SetupControls()
+    ' Explicit control binding to ensure data displays correctly
+    On Error Resume Next
+    
+    ' Explicitly set control sources to table fields
+    Me.txtSketchID.ControlSource = "SketchID"
+    Me.SessionID.ControlSource = "SessionID"
+    Me.cboPerception.ControlSource = "Perception"
+    Me.txtSuccess.ControlSource = "Success"
+    Me.cboPosition.ControlSource = "Position"
+    Me.chkPerfectMatch.ControlSource = "PerfectMatch"
+    Me.chkIPM.ControlSource = "IPM"
+    Me.chkSOP.ControlSource = "SOP"
+    Me.chkWIA.ControlSource = "WIA"
+    Me.[chkWIA-I].ControlSource = "WIA-I"
+    Me.DateCreated.ControlSource = "DateCreated"
+    Me.DateModified.ControlSource = "DateModified"
+    Me.DateDeleted.ControlSource = "DateDeleted"
+    
+    ' Set combo box row sources
+    Me.cboPerception.RowSource = "'Curved';'Straight';'Both'"
+    Me.cboPosition.RowSource = "'Inside';'Outside'"
+    
+    ' Make certain fields read-only
+    Me.SessionID.Enabled = False
+    Me.SessionID.Locked = True
+    Me.DateCreated.Enabled = False
+    Me.DateCreated.Locked = True
+    Me.DateModified.Enabled = False
+    Me.DateModified.Locked = True
+    Me.DateDeleted.Visible = False
+    Me.txtSketchID.Enabled = False
+    Me.txtSketchID.Locked = True
+    
+    On Error GoTo 0
+    
+    Debug.Print "SetupControls: Controls configured and bound"
+End Sub
+
+Private Sub LoadSessionInfo()
+    ' Load session info for header display
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    Dim strSQL As String
+    
+    On Error GoTo ErrorHandler
+    
+    Set db = CurrentDb()
+    strSQL = "SELECT s.SessionDate, s.SessionStartTime, e.EventName, " & _
+             "e.EventDate, e.EventTime, " & _
+             "p.FirstName, p.LastName " & _
+             "FROM (tblSessions s LEFT JOIN tblEvents e ON s.EventID = e.EventID) " & _
+             "LEFT JOIN tblPeople p ON s.PersonID = p.PersonID " & _
+             "WHERE s.SessionID = " & m_SessionID
+    
+    Set rs = db.OpenRecordset(strSQL, dbOpenSnapshot)
+    
+    If Not rs.EOF Then
+        On Error Resume Next
+        
+        ' Build Event Info: "Event Date | Event Time | Event Name"
+        Dim eventInfo As String
+        Dim eventDate As String
+        Dim eventTime As String
+        Dim eventName As String
+        
+        ' Format event date
+        If Not IsNull(rs!eventDate) Then
+            eventDate = Format(rs!eventDate, "mm/dd/yyyy")
+        Else
+            eventDate = "Unknown Date"
+        End If
+        
+        ' Format event time
+        If Not IsNull(rs!eventTime) Then
+            eventTime = Format(rs!eventTime, "hh:nn AM/PM")
+        Else
+            eventTime = "Unknown Time"
+        End If
+        
+        ' Get event name or use default
+        If Not IsNull(rs!eventName) And Len(Trim(rs!eventName)) > 0 Then
+            eventName = Trim(rs!eventName)
+        Else
+            eventName = "<no name>"
+        End If
+        
+        ' Combine all parts with " | " separator
+        eventInfo = eventDate & " | " & eventTime & " | " & eventName
+        Me.txtEventInfo = eventInfo
+        
+        ' Set Session Date/Time with pipe delimiter
+        Dim sessionDate As String
+        Dim sessionTime As String
+        
+        If Not IsNull(rs!sessionDate) Then
+            sessionDate = Format(rs!sessionDate, "mm/dd/yyyy")
+        Else
+            sessionDate = "Unknown Date"
+        End If
+        
+        If Not IsNull(rs!SessionStartTime) Then
+            sessionTime = Format(rs!SessionStartTime, "hh:nn AM/PM")
+        Else
+            sessionTime = "Unknown Time"
+        End If
+        
+        Me.txtSessionDateTime = sessionDate & " | " & sessionTime
+        
+        ' Set Title with Viewer Name
+        Dim viewerName As String
+        viewerName = Trim(Nz(rs!FirstName, "") & " " & Nz(rs!LastName, ""))
+        If Len(viewerName) > 0 Then
+            Me.lblTitle.Caption = "Manage Impressions for: " & viewerName
+        Else
+            Me.lblTitle.Caption = "Manage Impressions"
+        End If
+        
+        On Error GoTo 0
+        
+        Debug.Print "LoadSessionInfo: Event Info = " & eventInfo
+        Debug.Print "LoadSessionInfo: Loaded info for viewer: " & viewerName
+    End If
+    
+    rs.Close
+    Set rs = Nothing
+    Set db = Nothing
+    Exit Sub
+
+ErrorHandler:
+    On Error Resume Next
+    ' Set default values if there's an error
+    Me.lblTitle.Caption = "Manage Impressions"
+    Me.txtEventInfo = "Event information unavailable"
+    If Not rs Is Nothing Then rs.Close
+    Set rs = Nothing
+    Set db = Nothing
+    On Error GoTo 0
+End Sub
+

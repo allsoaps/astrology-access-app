@@ -1,0 +1,9 @@
+﻿HouseSystemID,SystemName,SwissEphID,Description,IsDefault
+1,Placidus,P,Most commonly used house system in Western astrology,TRUE
+2,Koch,K,Popular in Germany and parts of Europe,FALSE
+3,Equal,E,Each house is exactly 30 degrees,FALSE
+4,Whole Sign,W,Each house corresponds to a single sign,FALSE
+5,Regiomontanus,R,Popular in Medieval astrology,FALSE
+6,Campanus,C,Based on prime vertical,FALSE
+7,Topocentric,T,Modern system based on spherical trigonometry,FALSE
+8,Porphyry,O,Simple trisection of quadrants,FALSE

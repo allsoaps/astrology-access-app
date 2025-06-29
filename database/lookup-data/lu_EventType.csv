@@ -1,0 +1,13 @@
+﻿ID,Event_Type,Event_Code,Event_Desc
+2,Sports,NBA,Basketball
+3,Other,Business,Business
+4,Sports,NHL,Hockey
+5,Sports,NFL,Football
+6,Sports,MLS,Soccer
+7,Sports,MLB,Baseball
+8,Sports,WNBA,Womens Basketball
+9,Other,Stock,Dow
+10,Other,Stock,Nasdaq
+11,Other,Stock,S&P
+12,Other,Bitcoin,Bitcoin
+13,Other,Other,Other

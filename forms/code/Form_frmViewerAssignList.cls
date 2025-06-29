@@ -1,0 +1,235 @@
+VERSION 1.0 CLASS
+BEGIN
+  MultiUse = -1  'True
+END
+Attribute VB_Name = "Form_frmViewerAssignList"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = True
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Option Compare Database
+Option Explicit
+
+' Form-level variables
+Private m_EventID As Long
+Private m_EventName As String
+Private Const TEMP_TABLE_NAME As String = "tmpViewerAssignments"
+
+'================'
+' FORM EVENTS    '
+'================'
+
+Private Sub Form_Load()
+    On Error GoTo ErrorHandler
+    
+    ' Disable buttons until data is ready
+    Me.btnSelectAll.Enabled = False
+    Me.btnSelectNone.Enabled = False
+    Me.btnSave.Enabled = False
+    
+    ' Set default title
+    Me.lblTitle.Caption = "Assign Viewers to Event"
+    
+    ' Parse OpenArgs to get EventID and EventName
+    If Not IsNull(Me.openArgs) And Len(Me.openArgs) > 0 Then
+        Dim args() As String
+        args = Split(Me.openArgs, "|")
+        
+        If UBound(args) >= 0 Then m_EventID = CLng(args(0))
+        If UBound(args) >= 1 Then
+            m_EventName = args(1)
+            If Len(m_EventName) > 0 Then Me.lblTitle.Caption = "Assign Viewers to Event: " & m_EventName
+        End If
+        
+        ' Set up the temporary table and bind the form to it
+        If m_EventID > 0 Then
+            SetupTempTable
+            BindFormToData
+            ' Enable buttons now that data is loaded
+            Me.btnSelectAll.Enabled = True
+            Me.btnSelectNone.Enabled = True
+            Me.btnSave.Enabled = True
+        End If
+    End If
+    
+    Exit Sub
+
+ErrorHandler:
+    MsgBox "Error loading viewer assignment form: " & Err.Description, vbCritical, "Form Load Error"
+    ' Clean up on error
+    CleanupTempTable
+End Sub
+
+Private Sub Form_Close()
+    ' Ensure the temporary table is deleted when the form closes
+    CleanupTempTable
+End Sub
+
+'================'
+' CONTROL EVENTS '
+'================'
+
+Private Sub chkIsAssigned_AfterUpdate()
+    ' After the user checks or unchecks a box, requery the form
+    ' to re-apply the sort order, which moves the record to the top or bottom of the list.
+    Me.Requery
+End Sub
+
+
+'================'
+' BUTTON EVENTS  '
+'================'
+
+Private Sub btnSelectAll_Click()
+    UpdateAllCheckboxes True
+End Sub
+
+Private Sub btnSelectNone_Click()
+    UpdateAllCheckboxes False
+End Sub
+
+Private Sub btnSave_Click()
+    On Error GoTo ErrorHandler
+    
+    ' Force the form to save any pending edits (like the last checkbox clicked)
+    ' before we read from the underlying table.
+    If Me.Dirty Then
+        Me.Dirty = False
+    End If
+    
+    Dim db As DAO.Database
+    Dim ws As DAO.Workspace
+    Dim rsTemp As DAO.Recordset
+    Dim sql As String
+    Dim assignmentCount As Long
+    
+    If m_EventID = 0 Then
+        MsgBox "No event selected. Cannot save assignments.", vbCritical, "Save Error"
+        Exit Sub
+    End If
+    
+    ' Get workspace and database for transaction
+    Set ws = DBEngine.Workspaces(0)
+    Set db = CurrentDb()
+    
+    ' Start transaction
+    ws.BeginTrans
+    
+    ' 1. Delete all existing assignments for this event
+    sql = "DELETE * FROM tblAssignments WHERE EventID = " & m_EventID
+    db.Execute sql, dbFailOnError
+    
+    ' 2. Open the temporary table to read the new assignments
+    Set rsTemp = db.OpenRecordset("SELECT PersonID FROM " & TEMP_TABLE_NAME & " WHERE IsAssigned = True")
+    
+    ' 3. Loop through and insert the new assignments
+    If Not rsTemp.EOF Then
+        Do While Not rsTemp.EOF
+            sql = "INSERT INTO tblAssignments (PersonID, EventID, DateCreated) " & _
+                  "VALUES (" & rsTemp!PersonID & ", " & m_EventID & ", Now())"
+            db.Execute sql, dbFailOnError
+            assignmentCount = assignmentCount + 1
+            rsTemp.MoveNext
+        Loop
+    End If
+    
+    ' Commit the transaction
+    ws.CommitTrans
+    
+    ' Show success message and close
+    MsgBox assignmentCount & " viewer(s) assigned successfully.", vbInformation, "Save Complete"
+    DoCmd.Close acForm, Me.name
+    
+CleanExit:
+    On Error Resume Next
+    rsTemp.Close
+    Set rsTemp = Nothing
+    Set db = Nothing
+    Set ws = Nothing
+    Exit Sub
+
+ErrorHandler:
+    ws.Rollback
+    MsgBox "Error saving assignments: " & Err.Description, vbCritical, "Save Error"
+    Resume CleanExit
+End Sub
+
+Private Sub btnCancel_Click()
+    DoCmd.Close acForm, Me.name
+End Sub
+
+
+'================'
+' HELPER SUBS    '
+'================'
+
+Private Sub SetupTempTable()
+    On Error GoTo ErrorHandler
+    
+    Dim db As DAO.Database
+    Set db = CurrentDb()
+    
+    ' 1. Make sure temp table doesn't already exist from a prior crash
+    CleanupTempTable
+    
+    ' 2. Create the temp table structure.
+    db.Execute "CREATE TABLE " & TEMP_TABLE_NAME & " (PersonID LONG PRIMARY KEY, IsAssigned YESNO);"
+    
+    ' 3. Populate it with all people, with checkbox initially unchecked (False).
+    db.Execute "INSERT INTO " & TEMP_TABLE_NAME & " ( PersonID, IsAssigned ) " & _
+               "SELECT PersonID, False FROM tblPeople;"
+               
+    ' 4. Update the temp table, checking the boxes for people already assigned to this event.
+    db.Execute "UPDATE " & TEMP_TABLE_NAME & " INNER JOIN tblAssignments " & _
+               "ON " & TEMP_TABLE_NAME & ".PersonID = tblAssignments.PersonID " & _
+               "SET " & TEMP_TABLE_NAME & ".IsAssigned = True " & _
+               "WHERE tblAssignments.EventID = " & m_EventID & ";"
+
+CleanExit:
+    Set db = Nothing
+    Exit Sub
+
+ErrorHandler:
+    MsgBox "Error setting up temporary data: " & Err.Description, vbCritical
+    Resume CleanExit
+End Sub
+
+Private Sub BindFormToData()
+    On Error Resume Next
+    
+    Dim sql As String
+    
+    ' --- CORRECTED SORT ORDER ---
+    ' Change the ORDER BY from DESC to ASC.
+    ' In Access, True = -1 and False = 0, so an ascending sort
+    ' places the -1 (True) values at the top of the list.
+    sql = "SELECT p.PersonID, p.FirstName, p.LastName, t.IsAssigned " & _
+          "FROM tblPeople AS p INNER JOIN " & TEMP_TABLE_NAME & " AS t " & _
+          "ON p.PersonID = t.PersonID " & _
+          "ORDER BY t.IsAssigned ASC, p.LastName, p.FirstName;"
+          
+    Me.RecordSource = sql
+    
+    ' The fields on the form (txtFirstName, etc.) must have their ControlSource
+    ' set to FirstName, LastName, and IsAssigned respectively. This is done in the form designer.
+End Sub
+
+Private Sub UpdateAllCheckboxes(selectState As Boolean)
+    On Error GoTo ErrorHandler
+
+    CurrentDb.Execute "UPDATE " & TEMP_TABLE_NAME & " SET IsAssigned = " & selectState & ";"
+    Me.Requery
+    
+    Exit Sub
+    
+ErrorHandler:
+    MsgBox "Error updating selection: " & Err.Description, vbCritical
+End Sub
+
+Private Sub CleanupTempTable()
+    On Error Resume Next
+    CurrentDb.Execute "DROP TABLE " & TEMP_TABLE_NAME & ";"
+    On Error GoTo 0
+End Sub
+
+

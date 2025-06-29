@@ -1,0 +1,169 @@
+Attribute VB_Name = "modUtilities"
+Option Compare Database
+Option Explicit
+
+Private Declare PtrSafe Function GetTickCount Lib "kernel32" () As Long
+
+' Pause execution for the specified number of milliseconds
+Public Sub Sleep(milliseconds As Long)
+    Dim startTime As Long
+    startTime = GetTickCount()
+    Do While GetTickCount() - startTime < milliseconds
+        DoEvents
+    Loop
+End Sub
+
+Public Function FindLocationID(City As String, StateProv As String, Country As String) As Long
+    ' Find LocationID for a given city, state, country combination
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    Dim sql As String
+
+    Set db = CurrentDb()
+
+    ' Build SQL based on whether state/province is provided
+    If Len(Trim(StateProv)) > 0 Then
+        sql = "SELECT LocationID FROM tblLocations WHERE City='" & Replace(City, "'", "''") & "' AND StateProvince='" & Replace(StateProv, "'", "''") & "' AND Country='" & Replace(Country, "'", "''") & "'"
+    Else
+        sql = "SELECT LocationID FROM tblLocations WHERE City='" & Replace(City, "'", "''") & "' AND Country='" & Replace(Country, "'", "''") & "'"
+    End If
+
+    Set rs = db.OpenRecordset(sql)
+
+    If Not rs.EOF Then
+        FindLocationID = rs!LocationID
+    Else
+        FindLocationID = 0
+    End If
+
+    rs.Close
+    Set rs = Nothing
+    Set db = Nothing
+End Function
+
+Public Function AddNewLocation(City As String, StateProv As String, Country As String, lat As Double, lng As Double) As Long
+    ' Add a new location to tblLocations
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    Dim lngNewID As Long
+
+    Set db = CurrentDb()
+    Set rs = db.OpenRecordset("tblLocations")
+
+    ' Add new record
+    rs.AddNew
+    rs!City = City
+    rs!StateProvince = StateProv
+    rs!Country = Country
+    rs!latitude = lat
+    rs!longitude = lng
+    rs!DateCreated = Now()
+    rs.Update
+
+    ' Get the new LocationID - correct approach
+    rs.Bookmark = rs.LastModified
+    lngNewID = rs!LocationID
+
+    rs.Close
+    Set rs = Nothing
+    Set db = Nothing
+
+    AddNewLocation = lngNewID
+End Function
+
+Public Function DateToJulianDay(dt As Date) As Double
+    ' Convert VBA Date to Julian Day
+    Dim y As Long, m As Long, d As Double
+
+    y = Year(dt)
+    m = Month(dt)
+    d = Day(dt) + Hour(dt) / 24 + Minute(dt) / 1440 + Second(dt) / 86400
+
+    If m <= 2 Then
+        y = y - 1
+        m = m + 12
+    End If
+
+    DateToJulianDay = Int(365.25 * y) + Int(30.6001 * (m + 1)) + d + 1720981.5
+End Function
+
+'— returns personID of an existing student matching all key fields, or 0 if none —
+Public Function FindPersonID( _
+    FirstName As String, _
+    LastName As String, _
+    BirthDate As Date, _
+    BirthTime As Date, _
+    LocationID As Long _
+) As Long
+
+  Dim db  As DAO.Database
+  Dim rs  As DAO.Recordset
+  Dim sql As String
+  
+  Set db = CurrentDb()
+  sql = "SELECT personID FROM tblPeople WHERE " & _
+        "FirstName='" & Replace(FirstName, "'", "''") & "' AND " & _
+        "LastName ='" & Replace(LastName, "'", "''") & "' AND " & _
+        "birthDate=#" & Format(BirthDate, "mm\/dd\/yyyy") & "# AND " & _
+        "birthTime=#" & Format(BirthTime, "hh:nn:ss") & "# AND " & _
+        "locationID=" & LocationID
+
+  Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
+  If Not rs.EOF Then FindPersonID = rs!PersonID
+  rs.Close: Set rs = Nothing: Set db = Nothing
+End Function
+    '— returns sessionID of an existing viewer/event matching all key fields, or 0 if none
+Public Function FindSessionID( _
+    PersonID As String, _
+    EventID As String _
+) As Long
+
+  Dim db  As DAO.Database
+  Dim rs  As DAO.Recordset
+  Dim sql As String
+  
+  Set db = CurrentDb()
+  sql = "SELECT SessionID FROM tblSessions WHERE " & _
+        "PersonID=" & PersonID & " AND " & _
+        "EventID=" & EventID
+
+  Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
+  If Not rs.EOF Then FindSessionID = rs!SessionID
+  
+  rs.Close
+  Set rs = Nothing
+  Set db = Nothing
+End Function
+' Function to convert text to proper/camel case
+Public Function ProperCase(ByVal inputText As String) As String
+    Dim words() As String
+    Dim i As Integer
+    Dim result As String
+    
+    ' Handle empty string
+    If Len(inputText) = 0 Then
+        ProperCase = ""
+        Exit Function
+    End If
+    
+    ' Split the text into words
+    words = Split(LCase(inputText), " ")
+    
+    ' Process each word
+    For i = 0 To UBound(words)
+        ' Capitalize first letter of each word
+        If Len(words(i)) > 0 Then
+            words(i) = UCase(Left(words(i), 1)) & Mid(words(i), 2)
+        End If
+        
+        ' Add space between words
+        If i > 0 Then
+            result = result & " "
+        End If
+        
+        ' Add the word to result
+        result = result & words(i)
+    Next i
+    
+    ProperCase = result
+End Function

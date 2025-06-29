@@ -1,0 +1,154 @@
+﻿ID,Team,League,Conference,Division
+1,Arizona Diamondbacks,MLB,National League,West
+2,Atlanta Braves,MLB,National League,East
+3,Baltimore Orioles,MLB,American League,East
+4,Boston Red Sox,MLB,American League,East
+5,Chicago Cubs,MLB,National League,Central
+6,Chicago White Sox,MLB,American League,Central
+7,Cincinnati Reds,MLB,National League,Central
+8,Cleveland Guardians,MLB,American League,Central
+9,Colorado Rockies,MLB,National League,West
+10,Detroit Tigers,MLB,American League,Central
+11,Houston Astros,MLB,American League,West
+12,Kansas City Royals,MLB,American League,Central
+13,Los Angeles Angels,MLB,American League,West
+14,Los Angeles Dodgers,MLB,National League,West
+15,Miami Marlins,MLB,National League,East
+16,Milwaukee Brewers,MLB,National League,Central
+17,Minnesota Twins,MLB,American League,Central
+18,New York Mets,MLB,National League,East
+19,New York Yankees,MLB,American League,East
+20,Oakland Athletics,MLB,American League,West
+21,Philadelphia Phillies,MLB,National League,East
+22,Pittsburgh Pirates,MLB,National League,Central
+23,San Diego Padres,MLB,National League,West
+24,San Francisco Giants,MLB,National League,West
+25,Seattle Mariners,MLB,American League,West
+26,St. Louis Cardinals,MLB,National League,Central
+27,Tampa Bay Rays,MLB,American League,East
+28,Texas Rangers,MLB,American League,West
+29,Toronto Blue Jays,MLB,American League,East
+30,Washington Nationals,MLB,National League,East
+31,Atlanta United FC,MLS,Eastern,
+32,Austin FC,MLS,Western,
+33,CF Montréal,MLS,Eastern,
+34,Charlotte FC,MLS,Eastern,
+35,Chicago Fire FC,MLS,Eastern,
+36,Colorado Rapids,MLS,Western,
+37,Columbus Crew,MLS,Eastern,
+38,D.C. United,MLS,Eastern,
+39,FC Cincinnati,MLS,Eastern,
+40,FC Dallas,MLS,Western,
+41,Houston Dynamo FC,MLS,Western,
+42,Inter Miami CF,MLS,Eastern,
+43,LA Galaxy,MLS,Western,
+44,Los Angeles FC,MLS,Western,
+45,Minnesota United FC,MLS,Western,
+46,Nashville SC,MLS,Eastern,
+47,New England Revolution,MLS,Eastern,
+48,New York City FC,MLS,Eastern,
+49,New York Red Bulls,MLS,Eastern,
+50,Orlando City SC,MLS,Eastern,
+51,Philadelphia Union,MLS,Eastern,
+52,Portland Timbers,MLS,Western,
+53,Real Salt Lake,MLS,Western,
+54,San Diego FC,MLS,Western,
+55,San Jose Earthquakes,MLS,Western,
+56,Seattle Sounders FC,MLS,Western,
+57,Sporting Kansas City,MLS,Western,
+58,St. Louis City SC,MLS,Western,
+59,Toronto FC,MLS,Eastern,
+60,Vancouver Whitecaps FC,MLS,Western,
+61,Atlanta Hawks,NBA,Eastern,Southeast
+62,Boston Celtics,NBA,Eastern,Atlantic
+63,Brooklyn Nets,NBA,Eastern,Atlantic
+64,Charlotte Hornets,NBA,Eastern,Southeast
+65,Chicago Bulls,NBA,Eastern,Central
+66,Cleveland Cavaliers,NBA,Eastern,Central
+67,Dallas Mavericks,NBA,Western,Southwest
+68,Denver Nuggets,NBA,Western,Northwest
+69,Detroit Pistons,NBA,Eastern,Central
+70,Golden State Warriors,NBA,Western,Pacific
+71,Houston Rockets,NBA,Western,Southwest
+72,Indiana Pacers,NBA,Eastern,Central
+73,Los Angeles Clippers,NBA,Western,Pacific
+74,Los Angeles Lakers,NBA,Western,Pacific
+75,Memphis Grizzlies,NBA,Western,Southwest
+76,Miami Heat,NBA,Eastern,Southeast
+77,Milwaukee Bucks,NBA,Eastern,Central
+78,Minnesota Timberwolves,NBA,Western,Northwest
+79,New Orleans Pelicans,NBA,Western,Southwest
+80,New York Knicks,NBA,Eastern,Atlantic
+81,Orlando Magic,NBA,Eastern,Southeast
+82,Philadelphia 76ers,NBA,Eastern,Atlantic
+83,Phoenix Suns,NBA,Western,Pacific
+84,Portland Trail Blazers,NBA,Western,Northwest
+85,Sacramento Kings,NBA,Western,Pacific
+86,San Antonio Spurs,NBA,Western,Southwest
+87,Utah Jazz,NBA,Western,Northwest
+88,Washington Wizards,NBA,Eastern,Southeast
+89,Arizona Cardinals,NFL,NFC,West
+90,Atlanta Falcons,NFL,NFC,South
+91,Baltimore Ravens,NFL,AFC,North
+92,Buffalo Bills,NFL,AFC,East
+93,Carolina Panthers,NFL,NFC,South
+94,Chicago Bears,NFL,NFC,North
+95,Cincinnati Bengals,NFL,AFC,North
+96,Cleveland Browns,NFL,AFC,North
+97,Dallas Cowboys,NFL,NFC,East
+98,Denver Broncos,NFL,AFC,West
+99,Detroit Lions,NFL,NFC,North
+100,Green Bay Packers,NFL,NFC,North
+101,Houston Texans,NFL,AFC,South
+102,Indianapolis Colts,NFL,AFC,South
+103,Jacksonville Jaguars,NFL,AFC,South
+104,Kansas City Chiefs,NFL,AFC,West
+105,Las Vegas Raiders,NFL,AFC,West
+106,Los Angeles Chargers,NFL,AFC,West
+107,Los Angeles Rams,NFL,NFC,West
+108,Miami Dolphins,NFL,AFC,East
+109,Minnesota Vikings,NFL,NFC,North
+110,New England Patriots,NFL,AFC,East
+111,New Orleans Saints,NFL,NFC,South
+112,New York Giants,NFL,NFC,East
+113,New York Jets,NFL,AFC,East
+114,Philadelphia Eagles,NFL,NFC,East
+115,Pittsburgh Steelers,NFL,AFC,North
+116,San Francisco 49ers,NFL,NFC,West
+117,Seattle Seahawks,NFL,NFC,West
+118,Tampa Bay Buccaneers,NFL,NFC,South
+119,Tennessee Titans,NFL,AFC,South
+120,Washington Commanders,NFL,NFC,East
+121,Anaheim Ducks,NHL,Western,Pacific
+122,Arizona Coyotes,NHL,Western,Central
+123,Boston Bruins,NHL,Eastern,Atlantic
+124,Chicago Blackhawks,NHL,Western,Central
+125,Colorado Avalanche,NHL,Western,Central
+126,Columbus Blue Jackets,NHL,Eastern,Metropolitan
+127,Dallas Stars,NHL,Western,Central
+128,Detroit Red Wings,NHL,Eastern,Atlantic
+129,Florida Panthers,NHL,Eastern,Atlantic
+130,Los Angeles Kings,NHL,Western,Pacific
+131,Minnesota Wild,NHL,Western,Central
+132,New Jersey Devils,NHL,Eastern,Metropolitan
+133,New York Islanders,NHL,Eastern,Metropolitan
+134,New York Rangers,NHL,Eastern,Metropolitan
+135,Philadelphia Flyers,NHL,Eastern,Metropolitan
+136,Pittsburgh Penguins,NHL,Eastern,Metropolitan
+137,San Jose Sharks,NHL,Western,Pacific
+138,Seattle Kraken,NHL,Western,Pacific
+139,St. Louis Blues,NHL,Western,Central
+140,Tampa Bay Lightning,NHL,Eastern,Atlantic
+141,Vegas Golden Knights,NHL,Western,Pacific
+142,Washington Capitals,NHL,Eastern,Metropolitan
+143,Atlanta Dream,WNBA,Eastern,
+144,Chicago Sky,WNBA,Eastern,
+145,Dallas Wings,WNBA,Western,
+146,Indiana Fever,WNBA,Eastern,
+147,Las Vegas Aces,WNBA,Western,
+148,Los Angeles Sparks,WNBA,Western,
+149,Minnesota Lynx,WNBA,Western,
+150,New York Liberty,WNBA,Eastern,
+151,Phoenix Mercury,WNBA,Western,
+152,Seattle Storm,WNBA,Western,
+153,Washington Mystics,WNBA,Eastern,
