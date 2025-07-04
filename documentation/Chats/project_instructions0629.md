@@ -21,6 +21,15 @@
 
 ## Consistency Patterns to Maintain
 
+### MS Access Database Standards
+- **use DAO** for database operations
+- **use SQL** for complex queries
+- **use VBA** for complex logic
+- **use VBA** for form events
+- **use VBA** for form navigation
+- **use VBA** for form validation
+- **do not rewrite existing code unless explicitly asked to do so**
+
 ### Form Design Standards
 - **Cancel buttons** on ALL forms that modify data
 - **"Lose changes" warnings** when closing forms with unsaved data
