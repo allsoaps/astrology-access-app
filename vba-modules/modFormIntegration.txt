@@ -1,0 +1,485 @@
+Attribute VB_Name = "modFormIntegration"
+Option Compare Database
+Option Explicit
+
+' Rest of your existing code...
+' Integration functions for connecting the chart calculation module with existing forms
+' Dependencies: modChartCalculation, modSwissItems
+
+' ========================================
+' STUDENT/VIEWER FORM INTEGRATION
+' ========================================
+
+' Function to be called from frmStudentNew "Generate Natal Chart" button
+Public Function GenerateNatalChartFromForm(PersonID As Long) As Boolean
+    Dim chartID As Long
+    
+    On Error GoTo ErrorHandler
+    
+    ' Check if chart already exists
+'    chartID = modChartCalculation.ChartExists(CHART_TYPE_NATAL, PersonID)
+    
+    If chartID > 0 Then
+        Dim response As VbMsgBoxResult
+        response = MsgBox("A natal chart already exists for this person. Do you want to regenerate it?", vbYesNo + vbQuestion, "Chart Exists")
+        
+        If response = vbYes Then
+'            chartID = modChartCalculation.RegenerateChart(CHART_TYPE_NATAL, PersonID)
+        End If
+    Else
+        chartID = modChartCalculation.CreateNatalChart(PersonID)
+    End If
+    
+    If chartID > 0 Then
+        ' Update the natal chart generated flag
+'        modChartCalculation.UpdateNatalChartFlag PersonID, True
+        
+        ' Update the form checkbox if it exists
+        If Forms.IsLoaded("frmStudentEdit") Then
+            Forms("frmStudentEdit")!chkNatalChartGenerated = True
+        End If
+        
+        MsgBox "Natal chart generated successfully!", vbInformation, "Success"
+        GenerateNatalChartFromForm = True
+    Else
+        MsgBox "Failed to generate natal chart. Please check your birth data and location.", vbCritical, "Error"
+        GenerateNatalChartFromForm = False
+    End If
+    
+    Exit Function
+    
+ErrorHandler:
+    MsgBox "Error generating natal chart: " & Err.Description, vbCritical, "Error"
+    GenerateNatalChartFromForm = False
+End Function
+
+' Function to be called from frmStudentEdit "View Natal Chart" button
+Public Function ViewNatalChartFromForm(PersonID As Long) As Boolean
+    Dim chartID As Long
+    
+    On Error GoTo ErrorHandler
+    
+    ' Check if chart exists
+'    chartID = modChartCalculation.ChartExists(CHART_TYPE_NATAL, PersonID)
+    
+    If chartID = 0 Then
+        Dim response As VbMsgBoxResult
+        response = MsgBox("No natal chart exists for this person. Would you like to generate one now?", vbYesNo + vbQuestion, "No Chart Found")
+        
+        If response = vbYes Then
+            If GenerateNatalChartFromForm(PersonID) Then
+'                chartID = modChartCalculation.ChartExists(CHART_TYPE_NATAL, PersonID)
+            Else
+                ViewNatalChartFromForm = False
+                Exit Function
+            End If
+        Else
+            ViewNatalChartFromForm = False
+            Exit Function
+        End If
+    End If
+    
+    ' Show the aspect grid
+    modCharts.ShowChartAspectGrid chartID
+    ViewNatalChartFromForm = True
+    
+    Exit Function
+    
+ErrorHandler:
+    MsgBox "Error viewing natal chart: " & Err.Description, vbCritical, "Error"
+    ViewNatalChartFromForm = False
+End Function
+
+' Function to get or create a location from form data
+Public Function GetOrCreateLocationFromForm(City As String, StateProvince As String, Country As String, lat As Double, lng As Double) As Long
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    Dim sql As String
+    Dim LocationID As Long
+    
+    On Error GoTo ErrorHandler
+    
+    Set db = CurrentDb()
+    
+    ' First, try to find existing location
+    sql = "SELECT LocationID FROM tblLocations WHERE " & _
+          "City = '" & Replace(City, "'", "''") & "' AND " & _
+          "Country = '" & Replace(Country, "'", "''") & "'"
+    
+    If Len(Trim(StateProvince)) > 0 Then
+        sql = sql & " AND [State/Province] = '" & Replace(StateProvince, "'", "''") & "'"
+    End If
+    
+    Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
+    
+    If Not rs.EOF Then
+        ' Location exists
+        LocationID = rs!LocationID
+    Else
+        ' Create new location
+        rs.Close
+        Set rs = db.OpenRecordset("tblLocations", dbOpenDynaset)
+        
+        rs.AddNew
+        rs!City = City
+        rs![State/Province] = IIf(Len(Trim(StateProvince)) > 0, StateProvince, Null)
+        rs!Country = Country
+        rs!latitude = lat
+        rs!longitude = lng
+        rs!DateCreated = Now()
+        rs!DateUpdated = Now()
+        rs.Update
+        
+        LocationID = rs!LocationID
+    End If
+    
+    rs.Close
+    Set rs = Nothing
+    Set db = Nothing
+    
+    GetOrCreateLocationFromForm = LocationID
+    Exit Function
+    
+ErrorHandler:
+    GetOrCreateLocationFromForm = 0
+    If Not rs Is Nothing Then
+        rs.Close
+        Set rs = Nothing
+    End If
+    Set db = Nothing
+    Debug.Print "Error in GetOrCreateLocationFromForm: " & Err.Description
+End Function
+
+' ========================================
+' SESSION FORM INTEGRATION
+' ========================================
+
+' Function to be called from frmSessionManager "Generate Chart" button
+Public Function GenerateSessionChartFromForm(SessionID As Long) As Boolean
+    Dim chartID As Long
+    
+    On Error GoTo ErrorHandler
+    
+    ' Check if chart already exists
+'    chartID = modChartCalculation.ChartExists(CHART_TYPE_SESSION, , , SessionID)
+    
+    If chartID > 0 Then
+        Dim response As VbMsgBoxResult
+        response = MsgBox("A session chart already exists. Do you want to regenerate it?", vbYesNo + vbQuestion, "Chart Exists")
+        
+        If response = vbYes Then
+'            chartID = modChartCalculation.RegenerateChart(CHART_TYPE_SESSION, , , SessionID)
+        End If
+    Else
+        chartID = modChartCalculation.CreateSessionChart(SessionID)
+    End If
+    
+    If chartID > 0 Then
+        ' Update the form checkbox if it exists
+        If Forms.IsLoaded("frmSessionManager") Then
+            Forms("frmSessionManager")!chkSessionChartGenerated = True
+        End If
+        
+        MsgBox "Session chart generated successfully!", vbInformation, "Success"
+        GenerateSessionChartFromForm = True
+    Else
+        MsgBox "Failed to generate session chart. Please check your session data and location.", vbCritical, "Error"
+        GenerateSessionChartFromForm = False
+    End If
+    
+    Exit Function
+    
+ErrorHandler:
+    MsgBox "Error generating session chart: " & Err.Description, vbCritical, "Error"
+    GenerateSessionChartFromForm = False
+End Function
+
+' Function to be called from frmSessionManager "View Chart" button
+Public Function ViewSessionChartFromForm(SessionID As Long) As Boolean
+    Dim chartID As Long
+    
+    On Error GoTo ErrorHandler
+    
+    ' Check if chart exists
+'    chartID = modChartCalculation.ChartExists(CHART_TYPE_SESSION, , , SessionID)
+    
+    If chartID = 0 Then
+        Dim response As VbMsgBoxResult
+        response = MsgBox("No session chart exists. Would you like to generate one now?", vbYesNo + vbQuestion, "No Chart Found")
+        
+        If response = vbYes Then
+            If GenerateSessionChartFromForm(SessionID) Then
+'                chartID = modChartCalculation.ChartExists(CHART_TYPE_SESSION, , , SessionID)
+            Else
+                ViewSessionChartFromForm = False
+                Exit Function
+            End If
+        Else
+            ViewSessionChartFromForm = False
+            Exit Function
+        End If
+    End If
+    
+    ' Show the aspect grid
+    modCharts.ShowChartAspectGrid chartID
+    ViewSessionChartFromForm = True
+    
+    Exit Function
+    
+ErrorHandler:
+    MsgBox "Error viewing session chart: " & Err.Description, vbCritical, "Error"
+    ViewSessionChartFromForm = False
+End Function
+
+' ========================================
+' EVENT FORM INTEGRATION
+' ========================================
+
+' Function to be called from frmEventNew for event chart generation
+Public Function GenerateEventChartFromForm(EventID As Long) As Boolean
+    Dim chartID As Long
+    
+    On Error GoTo ErrorHandler
+    
+    ' Check if chart already exists
+'    chartID = modChartCalculation.ChartExists(CHART_TYPE_EVENT, , eventID)
+    
+    If chartID > 0 Then
+        Dim response As VbMsgBoxResult
+        response = MsgBox("An event chart already exists. Do you want to regenerate it?", vbYesNo + vbQuestion, "Chart Exists")
+        
+        If response = vbYes Then
+'            chartID = modChartCalculation.RegenerateChart(CHART_TYPE_EVENT, , eventID)
+        End If
+    Else
+        chartID = modChartCalculation.CreateEventChart(EventID)
+    End If
+    
+    If chartID > 0 Then
+        MsgBox "Event chart generated successfully!", vbInformation, "Success"
+        GenerateEventChartFromForm = True
+    Else
+        MsgBox "Failed to generate event chart. Please check your event data and location.", vbCritical, "Error"
+        GenerateEventChartFromForm = False
+    End If
+    
+    Exit Function
+    
+ErrorHandler:
+    MsgBox "Error generating event chart: " & Err.Description, vbCritical, "Error"
+    GenerateEventChartFromForm = False
+End Function
+
+' Function to view event chart
+Public Function ViewEventChartFromForm(EventID As Long) As Boolean
+    Dim chartID As Long
+    
+    On Error GoTo ErrorHandler
+    
+    ' Check if chart exists
+'    chartID = modChartCalculation.ChartExists(CHART_TYPE_EVENT, , eventID)
+    
+    If chartID = 0 Then
+        Dim response As VbMsgBoxResult
+        response = MsgBox("No event chart exists. Would you like to generate one now?", vbYesNo + vbQuestion, "No Chart Found")
+        
+        If response = vbYes Then
+            If GenerateEventChartFromForm(EventID) Then
+'                chartID = modChartCalculation.ChartExists(CHART_TYPE_EVENT, , eventID)
+            Else
+                ViewEventChartFromForm = False
+                Exit Function
+            End If
+        Else
+            ViewEventChartFromForm = False
+            Exit Function
+        End If
+    End If
+    
+    ' Show the aspect grid
+    modCharts.ShowChartAspectGrid chartID
+    ViewEventChartFromForm = True
+    
+    Exit Function
+    
+ErrorHandler:
+    MsgBox "Error viewing event chart: " & Err.Description, vbCritical, "Error"
+    ViewEventChartFromForm = False
+End Function
+
+' ========================================
+' CONFIGURATION INTEGRATION
+' ========================================
+
+' Function to apply aspect orb configuration
+Public Function ApplyAspectOrbConfig(majorOrb As Double, minorOrb As Double) As Boolean
+    ' This function would save the custom orb settings
+    ' Could be stored in a temp table or module-level variables
+    ' For now, we'll use module-level variables
+    
+    Static s_MajorOrb As Double
+    Static s_MinorOrb As Double
+    Static s_UseCustomOrbs As Boolean
+    
+    s_MajorOrb = majorOrb
+    s_MinorOrb = minorOrb
+    s_UseCustomOrbs = True
+    
+    ApplyAspectOrbConfig = True
+End Function
+
+' Function to get custom orb settings
+Public Function GetCustomMajorOrb() As Double
+    Static s_MajorOrb As Double
+    Static s_UseCustomOrbs As Boolean
+    
+    If s_UseCustomOrbs And s_MajorOrb > 0 Then
+        GetCustomMajorOrb = s_MajorOrb
+    Else
+        GetCustomMajorOrb = 8 ' Default
+    End If
+End Function
+
+Public Function GetCustomMinorOrb() As Double
+    Static s_MinorOrb As Double
+    Static s_UseCustomOrbs As Boolean
+    
+    If s_UseCustomOrbs And s_MinorOrb > 0 Then
+        GetCustomMinorOrb = s_MinorOrb
+    Else
+        GetCustomMinorOrb = 3 ' Default
+    End If
+End Function
+
+' ========================================
+' UTILITY FUNCTIONS
+' ========================================
+
+' Function to validate birth data before chart generation
+Public Function ValidateBirthData(BirthDate As Date, BirthTime As Date, LocationID As Long) As Boolean
+    ' Check if birth date is reasonable
+    If BirthDate < #1/1/1900# Or BirthDate > Date Then
+        MsgBox "Birth date must be between 1900 and today.", vbExclamation, "Invalid Birth Date"
+        ValidateBirthData = False
+        Exit Function
+    End If
+    
+    ' Check if location exists
+    If LocationID <= 0 Then
+        MsgBox "Please select or create a valid birth location.", vbExclamation, "Invalid Location"
+        ValidateBirthData = False
+        Exit Function
+    End If
+    
+    ' Check if location has coordinates
+    Dim lat As Double, lng As Double
+'    If Not modChartCalculation.GetLocationCoordinates(LocationID, lat, lng) Then
+'        MsgBox "The selected location does not have valid coordinates. Please update the location data.", vbExclamation, "Invalid Coordinates"
+'        ValidateBirthData = False
+'        Exit Function
+'    End If
+    
+    If lat = 0 And lng = 0 Then
+        MsgBox "The selected location has zero coordinates. Please update the location with proper latitude and longitude.", vbExclamation, "Missing Coordinates"
+        ValidateBirthData = False
+        Exit Function
+    End If
+    
+    ValidateBirthData = True
+End Function
+
+' Function to get moon phase for a given session
+Public Function GetMoonPhaseForSession(SessionID As Long) As String
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    Dim sql As String
+    Dim sessionDate As Date
+    Dim julianDay As Double
+    
+    On Error GoTo ErrorHandler
+    
+    Set db = CurrentDb()
+    sql = "SELECT SessionDate FROM tblSessions WHERE SessionID = " & SessionID
+    Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
+    
+    If Not rs.EOF Then
+        sessionDate = rs!sessionDate
+'        julianDay = modUtilities.DateTimeToJulianDay(sessionDate, #12:00:00 PM#) ' Use noon for moon phase
+        
+        ' Calculate moon phase using the function from modChartCalculation
+'        GetMoonPhaseForSession = CalculateMoonPhase(julianDay)
+    Else
+        GetMoonPhaseForSession = "Unknown"
+    End If
+    
+    rs.Close
+    Set rs = Nothing
+    Set db = Nothing
+    Exit Function
+    
+ErrorHandler:
+    GetMoonPhaseForSession = "Error"
+    If Not rs Is Nothing Then
+        rs.Close
+        Set rs = Nothing
+    End If
+    Set db = Nothing
+End Function
+
+' Function to update session with moon phase
+Public Function UpdateSessionMoonPhase(SessionID As Long) As Boolean
+    Dim moonPhase As String
+    Dim db As DAO.Database
+    
+    On Error GoTo ErrorHandler
+    
+    moonPhase = GetMoonPhaseForSession(SessionID)
+    
+    Set db = CurrentDb()
+    db.Execute "UPDATE tblSessions SET MoonPhase = '" & moonPhase & "' WHERE SessionID = " & SessionID
+    
+    UpdateSessionMoonPhase = True
+    Set db = Nothing
+    Exit Function
+    
+ErrorHandler:
+    UpdateSessionMoonPhase = False
+    Set db = Nothing
+    Debug.Print "Error updating session moon phase: " & Err.Description
+End Function
+
+' Function to get chart summary for display
+Public Function GetChartSummary(chartID As Long) As String
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    Dim sql As String
+    Dim summary As String
+    
+    On Error GoTo ErrorHandler
+    
+    Set db = CurrentDb()
+    sql = "SELECT ChartType, ChartDate, ChartTime FROM tblCharts WHERE ChartID = " & chartID
+    Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
+    
+    If Not rs.EOF Then
+        summary = rs!chartType & " Chart - " & Format(rs!ChartDate, "mm/dd/yyyy") & " " & Format(rs!ChartTime, "h:nn AM/PM")
+    Else
+        summary = "Chart not found"
+    End If
+    
+    rs.Close
+    Set rs = Nothing
+    Set db = Nothing
+    
+    GetChartSummary = summary
+    Exit Function
+    
+ErrorHandler:
+    GetChartSummary = "Error retrieving chart"
+    If Not rs Is Nothing Then
+        rs.Close
+        Set rs = Nothing
+    End If
+    Set db = Nothing
+End Function
+

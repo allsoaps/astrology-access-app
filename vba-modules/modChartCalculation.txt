@@ -1,0 +1,1199 @@
+Attribute VB_Name = "modChartCalculation"
+Option Compare Database
+Option Explicit
+
+' Chart calculation module that handles all chart types: Natal, Event, Session
+' Dependencies: modSwissItems, modUtilities
+
+' Chart Type Constants
+Public Const CHART_TYPE_NATAL As String = "Natal"
+Public Const CHART_TYPE_EVENT As String = "Event"
+Public Const CHART_TYPE_SESSION As String = "Session"
+
+' Structure to hold chart input data
+Public Type ChartInputData
+    chartType As String
+    PersonID As Long        ' For Natal and Session charts
+    EventID As Long         ' For Event and Session charts
+    SessionID As Long       ' For Session charts only
+    LocationID As Long      ' Location for the chart
+    ChartDate As Date       ' Date of the chart
+    ChartTime As Date       ' Time of the chart
+    latitude As Double      ' Calculated from LocationID
+    longitude As Double     ' Calculated from LocationID
+End Type
+
+' Structure to hold calculated planetary data
+Public Type PlanetaryData
+    BodyID As Long
+    longitude As Double
+    latitude As Double
+    distance As Double
+    LongitudeSpeed As Double
+    LatitudeSpeed As Double
+    HousePosition As Double
+    SignID As Long
+    IsRetrograde As Boolean
+    declination As Double
+End Type
+
+' Structure to hold house and angle data
+Public Type HouseAnglesData
+    cusps(1 To 12) As Double
+    ascendant As Double
+    midheaven As Double
+    descendant As Double
+    imumCoeli As Double
+End Type
+
+' Structure to hold aspect data
+Public Type aspectData
+    body1ID As Long
+    body2ID As Long
+    aspectID As Long
+    ExactDegree As Double
+    OrbitApplying As Boolean
+End Type
+
+' Main function to calculate and save a complete chart
+Public Function CalculateAndSaveChart(inputData As ChartInputData) As Long
+    Dim chartID As Long
+    Dim julianDay As Double
+    Dim planets() As PlanetaryData
+    Dim houses As HouseAnglesData
+    Dim aspects() As aspectData
+    Dim moonPhase As String
+    
+    On Error GoTo ErrorHandler
+    
+    ' Validate input data
+    If Not ValidateChartInput(inputData) Then
+        CalculateAndSaveChart = 0
+        Exit Function
+    End If
+    
+    ' Get location coordinates
+    If Not GetLocationCoordinates(inputData.LocationID, inputData.latitude, inputData.longitude) Then
+        MsgBox "Failed to get location coordinates for LocationID: " & inputData.LocationID, vbCritical
+        CalculateAndSaveChart = 0
+        Exit Function
+    End If
+    
+    ' Initialize Swiss Ephemeris
+    If Not modSwissItems.InitSwissEph() Then
+        MsgBox "Failed to initialize Swiss Ephemeris", vbCritical
+        CalculateAndSaveChart = 0
+        Exit Function
+    End If
+    
+    ' Calculate Julian Day - combine date and time first
+    Dim combinedDateTime As Date
+    combinedDateTime = inputData.ChartDate + timeValue(Format(inputData.ChartTime, "hh:nn:ss"))
+    julianDay = modUtilities.DateToJulianDay(combinedDateTime)
+    
+    ' Calculate planetary positions
+    If Not CalculateAllPlanetaryPositions(julianDay, inputData.latitude, inputData.longitude, planets()) Then
+        MsgBox "Failed to calculate planetary positions", vbCritical
+        CalculateAndSaveChart = 0
+        Exit Function
+    End If
+    
+    ' Calculate houses and angles
+    If Not CalculateHousesAndAngles(julianDay, inputData.latitude, inputData.longitude, houses) Then
+        MsgBox "Failed to calculate houses and angles", vbCritical
+        CalculateAndSaveChart = 0
+        Exit Function
+    End If
+    
+    ' Calculate moon phase using Swiss Ephemeris
+    moonPhase = CalculateMoonPhase(julianDay)
+    
+    ' Calculate aspects
+    If Not CalculateAspects(planets(), aspects()) Then
+        MsgBox "Failed to calculate aspects", vbCritical
+        CalculateAndSaveChart = 0
+        Exit Function
+    End If
+    
+    ' Save all data to database
+    chartID = SaveChartToDatabase(inputData, julianDay, planets(), houses, aspects(), moonPhase)
+    
+    If chartID > 0 Then
+        Debug.Print "Chart successfully calculated and saved with ID: " & chartID
+    End If
+    
+    CalculateAndSaveChart = chartID
+    Exit Function
+    
+ErrorHandler:
+    Debug.Print "Error in CalculateAndSaveChart: " & Err.Number & " - " & Err.Description
+    MsgBox "Error calculating chart: " & Err.Description, vbCritical
+    CalculateAndSaveChart = 0
+End Function
+
+' Validate chart input data
+Private Function ValidateChartInput(inputData As ChartInputData) As Boolean
+    ValidateChartInput = False
+    
+    ' Check chart type
+    If inputData.chartType <> CHART_TYPE_NATAL And _
+       inputData.chartType <> CHART_TYPE_EVENT And _
+       inputData.chartType <> CHART_TYPE_SESSION Then
+        MsgBox "Invalid chart type: " & inputData.chartType, vbCritical
+        Exit Function
+    End If
+    
+    ' Check required IDs based on chart type
+    Select Case inputData.chartType
+        Case CHART_TYPE_NATAL
+            If inputData.PersonID <= 0 Then
+                MsgBox "PersonID is required for natal charts", vbCritical
+                Exit Function
+            End If
+        Case CHART_TYPE_EVENT
+            If inputData.EventID <= 0 Then
+                MsgBox "EventID is required for event charts", vbCritical
+                Exit Function
+            End If
+        Case CHART_TYPE_SESSION
+            If inputData.PersonID <= 0 Or inputData.EventID <= 0 Or inputData.SessionID <= 0 Then
+                MsgBox "PersonID, EventID, and SessionID are required for session charts", vbCritical
+                Exit Function
+            End If
+    End Select
+    
+    ' Check location
+    If inputData.LocationID <= 0 Then
+        MsgBox "LocationID is required", vbCritical
+        Exit Function
+    End If
+    
+    ' Check date/time
+    If inputData.ChartDate = 0 Or inputData.ChartTime = 0 Then
+        MsgBox "Chart date and time are required", vbCritical
+        Exit Function
+    End If
+    
+    ValidateChartInput = True
+End Function
+
+' Get coordinates from location ID
+Private Function GetLocationCoordinates(LocationID As Long, ByRef lat As Double, ByRef lng As Double) As Boolean
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    Dim sql As String
+    
+    On Error GoTo ErrorHandler
+    
+    Set db = CurrentDb()
+    sql = "SELECT Latitude, Longitude FROM tblLocations WHERE LocationID = " & LocationID
+    Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
+    
+    If Not rs.EOF Then
+        lat = rs!latitude
+        lng = rs!longitude
+        GetLocationCoordinates = True
+    Else
+        GetLocationCoordinates = False
+    End If
+    
+    rs.Close
+    Set rs = Nothing
+    Set db = Nothing
+    Exit Function
+    
+ErrorHandler:
+    GetLocationCoordinates = False
+    If Not rs Is Nothing Then
+        rs.Close
+        Set rs = Nothing
+    End If
+    Set db = Nothing
+End Function
+
+' Calculate all planetary positions
+Private Function CalculateAllPlanetaryPositions(julianDay As Double, lat As Double, lng As Double, ByRef planets() As PlanetaryData) As Boolean
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    Dim sql As String
+    Dim i As Integer
+    Dim bodyCount As Integer
+    
+    On Error GoTo ErrorHandler
+    
+    Set db = CurrentDb()
+    sql = "SELECT BodyID, SwissEphID FROM tblCelestialBodies WHERE IsActive = True AND BodyType IN ('Planet', 'Asteroid', 'Node') ORDER BY DisplayOrder"
+    Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
+    
+    ' Count active bodies
+    rs.MoveLast
+    bodyCount = rs.recordCount
+    rs.MoveFirst
+    
+    ' Resize array
+    ReDim planets(0 To bodyCount - 1)
+    
+    ' Calculate each planetary position
+    i = 0
+    Do While Not rs.EOF
+        If Not CalculateSinglePlanetPosition(julianDay, lat, lng, rs!BodyID, rs!swissEphID, planets(i)) Then
+            Debug.Print "Failed to calculate position for BodyID: " & rs!BodyID
+            ' Continue with other planets rather than failing completely
+        End If
+        i = i + 1
+        rs.MoveNext
+    Loop
+    
+    rs.Close
+    Set rs = Nothing
+    Set db = Nothing
+    
+    CalculateAllPlanetaryPositions = True
+    Exit Function
+    
+ErrorHandler:
+    Debug.Print "Error in CalculateAllPlanetaryPositions: " & Err.Description
+    CalculateAllPlanetaryPositions = False
+    If Not rs Is Nothing Then
+        rs.Close
+        Set rs = Nothing
+    End If
+    Set db = Nothing
+End Function
+
+' Calculate position for a single planet
+Private Function CalculateSinglePlanetPosition(julianDay As Double, lat As Double, lng As Double, BodyID As Long, swissEphID As Long, ByRef planetData As PlanetaryData) As Boolean
+    Dim xx(5) As Double
+    Dim serr As String
+    Dim result As Long
+    Dim flags As Long
+    
+    On Error GoTo ErrorHandler
+    
+    ' Initialize error string
+    serr = String(255, vbNullChar)
+    
+    ' Set calculation flags
+    flags = modSwissItems.SEFLG_SPEED_PUBLIC Or modSwissItems.SEFLG_SWIEPH_PUBLIC
+    
+    ' Add coordinate system flag if needed
+    If modSwissItems.GetCoordinateSystemSetting() = "Heliocentric" Then
+        flags = flags Or modSwissItems.SEFLG_HELIOCENTRIC_PUBLIC
+    End If
+    
+    ' Calculate position using SafeCalcUT
+    result = modSwissItems.SafeCalcUT(julianDay, swissEphID, flags, xx(0), False)
+    
+    If result Then
+        With planetData
+            .BodyID = BodyID
+            .longitude = xx(0)
+            .latitude = xx(1)
+            .distance = xx(2)
+            .LongitudeSpeed = xx(3)
+            .LatitudeSpeed = xx(4)
+            .declination = 0 ' Will be calculated separately if needed
+            .SignID = GetSignFromLongitude(.longitude)
+            .IsRetrograde = (.LongitudeSpeed < 0)
+            .HousePosition = 0 ' Will be calculated after houses
+        End With
+        
+        CalculateSinglePlanetPosition = True
+    Else
+        Debug.Print "Swiss Ephemeris error for BodyID " & BodyID & ": " & Trim$(serr)
+        CalculateSinglePlanetPosition = False
+    End If
+    
+    Exit Function
+    
+ErrorHandler:
+    Debug.Print "Error calculating position for BodyID " & BodyID & ": " & Err.Description
+    CalculateSinglePlanetPosition = False
+End Function
+
+' Calculate houses and angles
+Private Function CalculateHousesAndAngles(julianDay As Double, lat As Double, lng As Double, ByRef houses As HouseAnglesData) As Boolean
+    Dim cusps(13) As Double
+    Dim ascmc(10) As Double
+    Dim result As Long
+    Dim houseSystem As String
+    Dim i As Integer
+    
+    On Error GoTo ErrorHandler
+    
+    ' Get default house system
+    houseSystem = GetDefaultHouseSystem()
+    
+    ' Calculate houses using the existing function from modSwissItems
+    Dim houseResult As Variant
+    houseResult = modSwissItems.GetAscendantMidheaven(julianDay, lat, lng)
+    
+    If IsArray(houseResult) And houseResult(0) <> -999 Then
+        ' Store angles
+        houses.ascendant = houseResult(0)
+        houses.midheaven = houseResult(1)
+        houses.descendant = NormalizeDegrees(houses.ascendant + 180)
+        houses.imumCoeli = NormalizeDegrees(houses.midheaven + 180)
+        
+        ' Get house cusps
+        Dim cuspsResult As Variant
+        cuspsResult = modSwissItems.GetHouseCusps(julianDay, lat, lng)
+        
+        If IsArray(cuspsResult) Then
+            For i = 1 To 12
+                If i <= UBound(cuspsResult) + 1 Then
+                    houses.cusps(i) = cuspsResult(i - 1)
+                End If
+            Next i
+        End If
+        
+        CalculateHousesAndAngles = True
+    Else
+        Debug.Print "Error calculating houses"
+        CalculateHousesAndAngles = False
+    End If
+    
+    Exit Function
+    
+ErrorHandler:
+    Debug.Print "Error in CalculateHousesAndAngles: " & Err.Description
+    CalculateHousesAndAngles = False
+End Function
+
+' Calculate aspects between planets
+Private Function CalculateAspects(planets() As PlanetaryData, ByRef aspects() As aspectData) As Boolean
+    Dim db As DAO.Database
+    Dim rsAspects As DAO.Recordset
+    Dim aspectCount As Integer
+    Dim i As Integer, j As Integer, k As Integer
+    Dim diff As Double
+    Dim orb As Double
+    Dim aspectCounter As Integer
+    
+    On Error GoTo ErrorHandler
+    
+    Set db = CurrentDb()
+    
+    ' Get aspect definitions with orb settings
+    Set rsAspects = db.OpenRecordset("SELECT AspectID, Angle, OrbitMajor, OrbitMinor FROM tblAspects ORDER BY AspectID", dbOpenSnapshot)
+    
+    ' Estimate maximum aspects (conservative)
+    ReDim aspects(0 To 200)
+    aspectCounter = 0
+    
+    ' Compare each planet with every other planet
+    For i = LBound(planets) To UBound(planets)
+        For j = i + 1 To UBound(planets)
+            ' Calculate angular difference
+            diff = Abs(planets(i).longitude - planets(j).longitude)
+            If diff > 180 Then diff = 360 - diff
+            
+            ' Check each aspect definition
+            rsAspects.MoveFirst
+            Do While Not rsAspects.EOF
+                ' Use major orb for now (could be enhanced to use minor orb for minor planets)
+                orb = GetAspectOrb(rsAspects!aspectID, True) ' True for major orb
+                
+                If IsWithinOrb(diff, rsAspects!angle, orb) Then
+                    ' Found an aspect
+                    With aspects(aspectCounter)
+                        .body1ID = planets(i).BodyID
+                        .body2ID = planets(j).BodyID
+                        .aspectID = rsAspects!aspectID
+                        .ExactDegree = Abs(diff - rsAspects!angle)
+                        .OrbitApplying = DetermineOrbitDirection(planets(i), planets(j), rsAspects!angle)
+                    End With
+                    aspectCounter = aspectCounter + 1
+                    
+                    ' Resize array if needed
+                    If aspectCounter > UBound(aspects) Then
+                        ReDim Preserve aspects(0 To UBound(aspects) + 50)
+                    End If
+                End If
+                
+                rsAspects.MoveNext
+            Loop
+        Next j
+    Next i
+    
+    ' Resize array to actual size
+    If aspectCounter > 0 Then
+        ReDim Preserve aspects(0 To aspectCounter - 1)
+    Else
+        ReDim aspects(0 To 0)
+    End If
+    
+    rsAspects.Close
+    Set rsAspects = Nothing
+    Set db = Nothing
+    
+    CalculateAspects = True
+    Exit Function
+    
+ErrorHandler:
+    Debug.Print "Error in CalculateAspects: " & Err.Description
+    CalculateAspects = False
+    If Not rsAspects Is Nothing Then
+        rsAspects.Close
+        Set rsAspects = Nothing
+    End If
+    Set db = Nothing
+End Function
+
+' Save complete chart to database
+Private Function SaveChartToDatabase(inputData As ChartInputData, julianDay As Double, planets() As PlanetaryData, houses As HouseAnglesData, aspects() As aspectData, moonPhase As String) As Long
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    Dim chartID As Long
+    Dim i As Integer
+    
+    On Error GoTo ErrorHandler
+    
+    Set db = CurrentDb()
+    
+    ' Begin transaction using workspace (DAO method)
+    Dim ws As DAO.Workspace
+    Set ws = DBEngine.Workspaces(0)
+    ws.BeginTrans
+    
+    ' Create chart record
+    Set rs = db.OpenRecordset("tblCharts", dbOpenDynaset)
+    rs.AddNew
+    
+    With rs
+        If inputData.PersonID > 0 Then !PersonID = inputData.PersonID
+        If inputData.EventID > 0 Then !EventID = inputData.EventID
+        If inputData.SessionID > 0 Then !SessionID = inputData.SessionID
+        !chartType = inputData.chartType
+        !ChartDate = inputData.ChartDate
+        !ChartTime = inputData.ChartTime
+        !LocationID = inputData.LocationID
+        !DateCreated = Now()
+        !Notes = "Julian Day: " & julianDay & vbCrLf & "Moon Phase: " & moonPhase
+    End With
+    
+    rs.Update
+    chartID = rs!chartID
+    rs.Close
+    
+    ' Save planetary positions
+    For i = LBound(planets) To UBound(planets)
+        If Not SavePlanetPosition(chartID, planets(i)) Then
+            Err.Raise vbObjectError + 1001, , "Failed to save planet position for BodyID: " & planets(i).BodyID
+        End If
+    Next i
+    
+    ' Save house angles as special positions
+    If Not SaveHouseAngles(chartID, houses) Then
+        Err.Raise vbObjectError + 1002, , "Failed to save house angles"
+    End If
+    
+    ' Save aspects
+    For i = LBound(aspects) To UBound(aspects)
+        If Not SaveAspect(chartID, aspects(i)) Then
+            Err.Raise vbObjectError + 1003, , "Failed to save aspect between bodies " & aspects(i).body1ID & " and " & aspects(i).body2ID
+        End If
+    Next i
+    
+    ws.CommitTrans
+    Set ws = Nothing
+    Set db = Nothing
+    
+    SaveChartToDatabase = chartID
+    Exit Function
+    
+ErrorHandler:
+    Debug.Print "Error in SaveChartToDatabase: " & Err.Description
+    ws.Rollback
+    Set db = Nothing
+    SaveChartToDatabase = 0
+End Function
+
+' Helper function to save individual planet position
+Private Function SavePlanetPosition(chartID As Long, planetData As PlanetaryData) As Boolean
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    
+    On Error GoTo ErrorHandler
+    
+    Set db = CurrentDb()
+    Set rs = db.OpenRecordset("tblChartPositions", dbOpenDynaset)
+    
+    rs.AddNew
+    With rs
+        !chartID = chartID
+        !BodyID = planetData.BodyID
+        !longitude = planetData.longitude
+        !latitude = planetData.latitude
+        !distance = planetData.distance
+        !LongitudeSpeed = planetData.LongitudeSpeed
+        !LatitudeSpeed = planetData.LatitudeSpeed
+        !HousePosition = planetData.HousePosition
+        !SignID = planetData.SignID
+        !IsRetrograde = planetData.IsRetrograde
+        !declination = planetData.declination
+    End With
+    rs.Update
+    
+    rs.Close
+    Set rs = Nothing
+    Set db = Nothing
+    
+    SavePlanetPosition = True
+    Exit Function
+    
+ErrorHandler:
+    SavePlanetPosition = False
+    If Not rs Is Nothing Then
+        rs.Close
+        Set rs = Nothing
+    End If
+    Set db = Nothing
+End Function
+
+' Helper function to save house angles
+Private Function SaveHouseAngles(chartID As Long, houses As HouseAnglesData) As Boolean
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    Dim i As Integer
+    
+    On Error GoTo ErrorHandler
+    
+    Set db = CurrentDb()
+    Set rs = db.OpenRecordset("tblChartPositions", dbOpenDynaset)
+    
+    ' Save Ascendant
+    rs.AddNew
+    With rs
+        !chartID = chartID
+        !BodyID = 15  ' Ascendant
+        !longitude = houses.ascendant
+        !latitude = 0
+        !distance = 0
+        !LongitudeSpeed = 0
+        !LatitudeSpeed = 0
+        !HousePosition = 0
+        !SignID = GetSignFromLongitude(houses.ascendant)
+        !IsRetrograde = False
+        !declination = 0
+    End With
+    rs.Update
+    
+    ' Save Midheaven
+    rs.AddNew
+    With rs
+        !chartID = chartID
+        !BodyID = 16  ' Midheaven
+        !longitude = houses.midheaven
+        !latitude = 0
+        !distance = 0
+        !LongitudeSpeed = 0
+        !LatitudeSpeed = 0
+        !HousePosition = 0
+        !SignID = GetSignFromLongitude(houses.midheaven)
+        !IsRetrograde = False
+        !declination = 0
+    End With
+    rs.Update
+    
+    ' Save Descendant
+    rs.AddNew
+    With rs
+        !chartID = chartID
+        !BodyID = 17  ' Descendant
+        !longitude = houses.descendant
+        !latitude = 0
+        !distance = 0
+        !LongitudeSpeed = 0
+        !LatitudeSpeed = 0
+        !HousePosition = 0
+        !SignID = GetSignFromLongitude(houses.descendant)
+        !IsRetrograde = False
+        !declination = 0
+    End With
+    rs.Update
+    
+    ' Save Imum Coeli
+    rs.AddNew
+    With rs
+        !chartID = chartID
+        !BodyID = 18  ' Imum Coeli
+        !longitude = houses.imumCoeli
+        !latitude = 0
+        !distance = 0
+        !LongitudeSpeed = 0
+        !LatitudeSpeed = 0
+        !HousePosition = 0
+        !SignID = GetSignFromLongitude(houses.imumCoeli)
+        !IsRetrograde = False
+        !declination = 0
+    End With
+    rs.Update
+    
+    rs.Close
+    Set rs = Nothing
+    Set db = Nothing
+    
+    SaveHouseAngles = True
+    Exit Function
+    
+ErrorHandler:
+    SaveHouseAngles = False
+    If Not rs Is Nothing Then
+        rs.Close
+        Set rs = Nothing
+    End If
+    Set db = Nothing
+End Function
+
+' Helper function to save individual aspect
+Private Function SaveAspect(chartID As Long, aspectData As aspectData) As Boolean
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    
+    On Error GoTo ErrorHandler
+    
+    Set db = CurrentDb()
+    Set rs = db.OpenRecordset("tblChartAspects", dbOpenDynaset)
+    
+    rs.AddNew
+    With rs
+        !chartID = chartID
+        !body1ID = aspectData.body1ID
+        !body2ID = aspectData.body2ID
+        !aspectID = aspectData.aspectID
+        !ExactDegree = aspectData.ExactDegree
+        !OrbitApplying = aspectData.OrbitApplying
+    End With
+    rs.Update
+    
+    rs.Close
+    Set rs = Nothing
+    Set db = Nothing
+    
+    SaveAspect = True
+    Exit Function
+    
+ErrorHandler:
+    SaveAspect = False
+    If Not rs Is Nothing Then
+        rs.Close
+        Set rs = Nothing
+    End If
+    Set db = Nothing
+End Function
+
+' Helper functions
+Private Function GetSignFromLongitude(longitude As Double) As Long
+    GetSignFromLongitude = Int(longitude / 30) + 1
+    If GetSignFromLongitude > 12 Then GetSignFromLongitude = 12
+    If GetSignFromLongitude < 1 Then GetSignFromLongitude = 1
+End Function
+
+Private Function NormalizeDegrees(degrees As Double) As Double
+    NormalizeDegrees = degrees
+    Do While NormalizeDegrees >= 360
+        NormalizeDegrees = NormalizeDegrees - 360
+    Loop
+    Do While NormalizeDegrees < 0
+        NormalizeDegrees = NormalizeDegrees + 360
+    Loop
+End Function
+
+Private Function IsWithinOrb(angle As Double, aspectAngle As Double, orb As Double) As Boolean
+    IsWithinOrb = (angle >= aspectAngle - orb) And (angle <= aspectAngle + orb)
+End Function
+
+Private Function GetDefaultHouseSystem() As String
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    
+    On Error GoTo ErrorHandler
+    
+    Set db = CurrentDb()
+    Set rs = db.OpenRecordset("SELECT SwissEphID FROM tblHouseSystems WHERE IsDefault = True", dbOpenSnapshot)
+    
+    If Not rs.EOF Then
+        GetDefaultHouseSystem = rs!swissEphID
+    Else
+        GetDefaultHouseSystem = "P" ' Default to Placidus
+    End If
+    
+    rs.Close
+    Set rs = Nothing
+    Set db = Nothing
+    Exit Function
+    
+ErrorHandler:
+    GetDefaultHouseSystem = "P"
+    If Not rs Is Nothing Then
+        rs.Close
+        Set rs = Nothing
+    End If
+    Set db = Nothing
+End Function
+
+Private Function GetAspectOrb(aspectID As Long, useMajorOrb As Boolean) As Double
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    Dim sql As String
+    
+    On Error GoTo ErrorHandler
+    
+    ' Check if there are custom orb settings
+    If HasCustomOrbSettings() Then
+        GetAspectOrb = GetCustomAspectOrb(aspectID, useMajorOrb)
+    Else
+        ' Use default orbs from tblAspects
+        Set db = CurrentDb()
+        sql = "SELECT OrbitMajor, OrbitMinor FROM tblAspects WHERE AspectID = " & aspectID
+        Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
+        
+        If Not rs.EOF Then
+            If useMajorOrb Then
+                GetAspectOrb = rs!OrbitMajor
+            Else
+                GetAspectOrb = rs!OrbitMinor
+            End If
+        Else
+            GetAspectOrb = 8 ' Default orb
+        End If
+        
+        rs.Close
+        Set rs = Nothing
+        Set db = Nothing
+    End If
+    
+    Exit Function
+    
+ErrorHandler:
+    GetAspectOrb = 8 ' Default orb
+    If Not rs Is Nothing Then
+        rs.Close
+        Set rs = Nothing
+    End If
+    Set db = Nothing
+End Function
+
+Private Function HasCustomOrbSettings() As Boolean
+    ' This would check if the Aspect Orbs Config form has custom settings
+    ' For now, return False to use default orbs
+    HasCustomOrbSettings = False
+End Function
+
+Private Function GetCustomAspectOrb(aspectID As Long, useMajorOrb As Boolean) As Double
+    ' This would get custom orb from the Aspect Orbs Config form
+    ' For now, return default
+    GetCustomAspectOrb = 8
+End Function
+
+Private Function DetermineOrbitDirection(planet1 As PlanetaryData, planet2 As PlanetaryData, aspectAngle As Double) As Boolean
+    ' Simplified orbit direction calculation
+    ' Returns True if applying, False if separating
+    ' This is a complex calculation that would need more sophisticated logic
+    DetermineOrbitDirection = (planet1.LongitudeSpeed > planet2.LongitudeSpeed)
+End Function
+
+Private Function CalculateMoonPhase(julianDay As Double) As String
+    ' Calculate moon phase using Swiss Ephemeris
+'    Dim julianDay As Double
+    Dim sunLon As Double, moonLon As Double
+    Dim phase As Double
+    Dim xx(5) As Double
+    Dim serr As String
+    Dim result As Long
+    
+    On Error GoTo ErrorHandler
+    
+    serr = String(255, vbNullChar)
+    
+    ' Get Sun position
+    result = modSwissItems.SafeCalcUT(julianDay, 0, modSwissItems.SEFLG_SWIEPH_PUBLIC, sunLon, False)
+    If Not result Then GoTo ErrorHandler
+    
+    ' Get Moon position
+    result = modSwissItems.SafeCalcUT(julianDay, 1, modSwissItems.SEFLG_SWIEPH_PUBLIC, moonLon, False)
+    If Not result Then GoTo ErrorHandler
+    
+    ' Calculate phase angle
+    phase = moonLon - sunLon
+    If phase < 0 Then phase = phase + 360
+    
+    ' Determine phase name
+    Select Case phase
+        Case 0 To 45, 315 To 360
+            CalculateMoonPhase = "New Moon"
+        Case 45 To 135
+            CalculateMoonPhase = "Waxing"
+        Case 135 To 225
+            CalculateMoonPhase = "Full Moon"
+        Case 225 To 315
+            CalculateMoonPhase = "Waning"
+        Case Else
+            CalculateMoonPhase = "Unknown"
+    End Select
+    
+    Exit Function
+    
+ErrorHandler:
+    CalculateMoonPhase = "Unknown"
+End Function
+
+' Public convenience functions for different chart types
+
+Public Function CreateNatalChart(PersonID As Long) As Long
+    Dim inputData As ChartInputData
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    
+    On Error GoTo ErrorHandler
+    
+    ' Get person data
+    Set db = CurrentDb()
+    Set rs = db.OpenRecordset("SELECT LocationID, BirthDate, BirthTime FROM tblPeople WHERE PersonID = " & PersonID, dbOpenSnapshot)
+    
+    If rs.EOF Then
+        MsgBox "Person not found with ID: " & PersonID, vbCritical
+        CreateNatalChart = 0
+        Exit Function
+    End If
+    
+    With inputData
+        .chartType = CHART_TYPE_NATAL
+        .PersonID = PersonID
+        .EventID = 0
+        .SessionID = 0
+        .LocationID = rs!LocationID
+        .ChartDate = rs!BirthDate
+        .ChartTime = rs!BirthTime
+    End With
+    
+    rs.Close
+    Set rs = Nothing
+    Set db = Nothing
+    
+    CreateNatalChart = CalculateAndSaveChart(inputData)
+    Exit Function
+    
+ErrorHandler:
+    CreateNatalChart = 0
+    If Not rs Is Nothing Then
+        rs.Close
+        Set rs = Nothing
+    End If
+    Set db = Nothing
+End Function
+
+Public Function CreateEventChart(EventID As Long) As Long
+    Dim inputData As ChartInputData
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    
+    On Error GoTo ErrorHandler
+    
+    ' Get event data
+    Set db = CurrentDb()
+    Set rs = db.OpenRecordset("SELECT LocationID, EventDate, EventTime FROM tblEvents WHERE EventID = " & EventID, dbOpenSnapshot)
+    
+    If rs.EOF Then
+        MsgBox "Event not found with ID: " & EventID, vbCritical
+        CreateEventChart = 0
+        Exit Function
+    End If
+    
+    With inputData
+        .chartType = CHART_TYPE_EVENT
+        .PersonID = 0
+        .EventID = EventID
+        .SessionID = 0
+        .LocationID = rs!LocationID
+        .ChartDate = rs!eventDate
+        .ChartTime = rs!eventTime
+    End With
+    
+    rs.Close
+    Set rs = Nothing
+    Set db = Nothing
+    
+    CreateEventChart = CalculateAndSaveChart(inputData)
+    Exit Function
+    
+ErrorHandler:
+    CreateEventChart = 0
+    If Not rs Is Nothing Then
+        rs.Close
+        Set rs = Nothing
+    End If
+    Set db = Nothing
+End Function
+
+Public Function CreateSessionChart(SessionID As Long) As Long
+    Dim inputData As ChartInputData
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    
+    On Error GoTo ErrorHandler
+    
+    ' Get session data
+    Set db = CurrentDb()
+    Set rs = db.OpenRecordset("SELECT StudentID, EventID, SessionDate, SessionTime, LocationID FROM tblSessions WHERE SessionID = " & SessionID, dbOpenSnapshot)
+    
+    If rs.EOF Then
+        MsgBox "Session not found with ID: " & SessionID, vbCritical
+        CreateSessionChart = 0
+        Exit Function
+    End If
+    
+    With inputData
+        .chartType = CHART_TYPE_SESSION
+        .PersonID = rs!studentID  ' StudentID is the PersonID
+        .EventID = rs!EventID
+        .SessionID = SessionID
+        .LocationID = rs!LocationID
+        .ChartDate = rs!sessionDate
+        .ChartTime = rs!sessionTime
+    End With
+    
+    rs.Close
+    Set rs = Nothing
+    Set db = Nothing
+    
+    CreateSessionChart = CalculateAndSaveChart(inputData)
+    Exit Function
+    
+ErrorHandler:
+    CreateSessionChart = 0
+    If Not rs Is Nothing Then
+        rs.Close
+        Set rs = Nothing
+    End If
+    Set db = Nothing
+End Function
+
+' Function to check if a chart already exists
+Public Function chartExists(chartType As String, Optional PersonID As Long = 0, Optional EventID As Long = 0, Optional SessionID As Long = 0) As Long
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    Dim sql As String
+    
+    On Error GoTo ErrorHandler
+    
+    Set db = CurrentDb()
+    
+    sql = "SELECT ChartID FROM tblCharts WHERE ChartType = '" & chartType & "'"
+    
+    Select Case chartType
+        Case CHART_TYPE_NATAL
+            sql = sql & " AND PersonID = " & PersonID
+        Case CHART_TYPE_EVENT
+            sql = sql & " AND EventID = " & EventID
+        Case CHART_TYPE_SESSION
+            sql = sql & " AND SessionID = " & SessionID
+    End Select
+    
+    Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
+    
+    If Not rs.EOF Then
+        chartExists = rs!chartID
+    Else
+        chartExists = 0
+    End If
+    
+    rs.Close
+    Set rs = Nothing
+    Set db = Nothing
+    Exit Function
+    
+ErrorHandler:
+    chartExists = 0
+    If Not rs Is Nothing Then
+        rs.Close
+        Set rs = Nothing
+    End If
+    Set db = Nothing
+End Function
+
+' Function to delete a chart and all its data
+Public Function DeleteChart(chartID As Long) As Boolean
+    Dim db As DAO.Database
+    Dim ws As DAO.Workspace
+    
+    On Error GoTo ErrorHandler
+    
+    Set db = CurrentDb()
+    Set ws = DBEngine.Workspaces(0)
+    ws.BeginTrans
+    
+    ' Delete aspects first (foreign key constraint)
+    db.Execute "DELETE FROM tblChartAspects WHERE ChartID = " & chartID
+    
+    ' Delete positions
+    db.Execute "DELETE FROM tblChartPositions WHERE ChartID = " & chartID
+    
+    ' Delete chart record
+    db.Execute "DELETE FROM tblCharts WHERE ChartID = " & chartID
+    
+    ws.CommitTrans
+    Set ws = Nothing
+    Set db = Nothing
+    
+    DeleteChart = True
+    Exit Function
+    
+ErrorHandler:
+    ws.Rollback
+    Set ws = Nothing
+    Set db = Nothing
+    DeleteChart = False
+    MsgBox "Error deleting chart: " & Err.Description, vbCritical
+End Function
+
+' Function to get chart ID for display purposes
+Public Function GetChartID(chartType As String, Optional PersonID As Long = 0, Optional EventID As Long = 0, Optional SessionID As Long = 0) As Long
+    GetChartID = chartExists(chartType, PersonID, EventID, SessionID)
+End Function
+
+' Aspect Orbs Configuration Integration
+' These functions will connect to your Aspect Orbs Config form when you're ready
+
+Public Function SetCustomAspectOrb(aspectType As String, orbValue As Double) As Boolean
+    ' This will save custom orb settings when Aspect Orbs Config form is connected
+    ' For now, just return True
+    SetCustomAspectOrb = True
+End Function
+
+Public Function GetCustomAspectOrbSetting(aspectType As String) As Double
+    ' This will retrieve custom orb settings when Aspect Orbs Config form is connected
+    ' For now, return default values
+    Select Case aspectType
+        Case "Major"
+            GetCustomAspectOrbSetting = 8
+        Case "Minor"
+            GetCustomAspectOrbSetting = 3
+        Case Else
+            GetCustomAspectOrbSetting = 8
+    End Select
+End Function
+
+' Function specifically for your existing forms integration
+Public Function GenerateNatalChartForStudent(PersonID As Long) As Boolean
+    Dim chartID As Long
+    
+    ' Check if chart already exists
+    chartID = chartExists(CHART_TYPE_NATAL, PersonID)
+    
+    If chartID > 0 Then
+        ' Chart already exists, ask user if they want to regenerate
+        If MsgBox("Natal chart already exists for this person. Do you want to regenerate it?", vbYesNo + vbQuestion) = vbNo Then
+            GenerateNatalChartForStudent = True
+            Exit Function
+        Else
+            ' Delete existing chart
+            If Not DeleteChart(chartID) Then
+                GenerateNatalChartForStudent = False
+                Exit Function
+            End If
+        End If
+    End If
+    
+    ' Generate new chart
+    chartID = CreateNatalChart(PersonID)
+    
+    If chartID > 0 Then
+        ' Update the NatalChartGenerated flag in tblPeople
+        CurrentDb.Execute "UPDATE tblPeople SET NatalChartGenerated = True WHERE PersonID = " & PersonID
+        GenerateNatalChartForStudent = True
+        MsgBox "Natal chart generated successfully!", vbInformation
+    Else
+        GenerateNatalChartForStudent = False
+        MsgBox "Failed to generate natal chart.", vbCritical
+    End If
+End Function
+
+Public Function GenerateEventChartForEvent(EventID As Long) As Boolean
+    Dim chartID As Long
+    
+    ' Check if chart already exists
+    chartID = chartExists(CHART_TYPE_EVENT, , EventID)
+    
+    If chartID > 0 Then
+        ' Chart already exists, ask user if they want to regenerate
+        If MsgBox("Event chart already exists. Do you want to regenerate it?", vbYesNo + vbQuestion) = vbNo Then
+            GenerateEventChartForEvent = True
+            Exit Function
+        Else
+            ' Delete existing chart
+            If Not DeleteChart(chartID) Then
+                GenerateEventChartForEvent = False
+                Exit Function
+            End If
+        End If
+    End If
+    
+    ' Generate new chart
+    chartID = CreateEventChart(EventID)
+    
+    If chartID > 0 Then
+        GenerateEventChartForEvent = True
+        MsgBox "Event chart generated successfully!", vbInformation
+    Else
+        GenerateEventChartForEvent = False
+        MsgBox "Failed to generate event chart.", vbCritical
+    End If
+End Function
+
+Public Function GenerateSessionChartForSession(SessionID As Long) As Boolean
+    Dim chartID As Long
+    
+    ' Check if chart already exists
+    chartID = chartExists(CHART_TYPE_SESSION, , , SessionID)
+    
+    If chartID > 0 Then
+        ' Chart already exists, ask user if they want to regenerate
+        If MsgBox("Session chart already exists. Do you want to regenerate it?", vbYesNo + vbQuestion) = vbNo Then
+            GenerateSessionChartForSession = True
+            Exit Function
+        Else
+            ' Delete existing chart
+            If Not DeleteChart(chartID) Then
+                GenerateSessionChartForSession = False
+                Exit Function
+            End If
+        End If
+    End If
+    
+    ' Generate new chart
+    chartID = CreateSessionChart(SessionID)
+    
+    If chartID > 0 Then
+        ' Update the SessionChartGenerated flag in tblSessions
+        CurrentDb.Execute "UPDATE tblSessions SET SessionChartGenerated = True WHERE SessionID = " & SessionID
+        GenerateSessionChartForSession = True
+        MsgBox "Session chart generated successfully!", vbInformation
+    Else
+        GenerateSessionChartForSession = False
+        MsgBox "Failed to generate session chart.", vbCritical
+    End If
+End Function
+
+' Function to display chart in aspect grid
+Public Function ViewChartInAspectGrid(chartType As String, Optional PersonID As Long = 0, Optional EventID As Long = 0, Optional SessionID As Long = 0) As Boolean
+    Dim chartID As Long
+    
+    chartID = GetChartID(chartType, PersonID, EventID, SessionID)
+    
+    If chartID = 0 Then
+        MsgBox "No chart found for the specified criteria.", vbInformation
+        ViewChartInAspectGrid = False
+        Exit Function
+    End If
+    
+    ' Use your existing aspect grid functionality
+    modCharts.ShowChartAspectGrid chartID
+    ViewChartInAspectGrid = True
+End Function
+
+
+
+
+
