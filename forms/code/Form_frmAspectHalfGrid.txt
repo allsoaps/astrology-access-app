@@ -1,0 +1,620 @@
+VERSION 1.0 CLASS
+BEGIN
+  MultiUse = -1  'True
+END
+Attribute VB_Name = "Form_frmAspectHalfGrid"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = True
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Option Compare Database
+Option Explicit
+' =================================================================
+' frmAspectHalfGrid - Chart Display Form
+' =================================================================
+' This form displays planetary positions and aspects for a given chart
+' Called from Session Manager with ChartID parameter
+
+' Form-level variables
+Private m_ChartID As Long
+Private m_ChartType As String
+Private m_ChartTitle As String
+Private m_PersonID As String
+Private m_EventID As String
+Private m_SessionID As String
+
+
+' =================================================================
+' FORM EVENTS
+' =================================================================
+
+Private Sub Form_Load()
+    On Error GoTo ErrorHandler
+    
+    Debug.Print "=== frmAspectGrid Form_Load ==="
+    Debug.Print "OpenArgs value: " & Nz(Me.openArgs, "NULL")
+    Debug.Print "OpenArgs is null: " & IsNull(Me.openArgs)
+    
+    ' Get ChartID from OpenArgs parameter
+    If Not IsNull(Me.openArgs) And Me.openArgs <> "" Then
+        If IsNumeric(Me.openArgs) Then
+            m_ChartID = CLng(Me.openArgs)
+            
+            ' Load and display the chart data
+            LoadChartData
+        Else
+            MsgBox "Invalid chart ID received: " & Me.openArgs, vbCritical, "Chart Display Error"
+            DoCmd.Close acForm, Me.name
+        End If
+    Else
+        MsgBox "No chart specified to display. OpenArgs is null or empty.", vbExclamation, "Chart Display Error"
+        DoCmd.Close acForm, Me.name
+    End If
+    
+    Exit Sub
+    
+ErrorHandler:
+    MsgBox "Error loading chart display: " & Err.Description, vbCritical, "Form Load Error"
+    Debug.Print "ERROR in Form_Load: " & Err.Number & " - " & Err.Description
+    DoCmd.Close acForm, Me.name
+End Sub
+
+
+' =================================================================
+' CHART DATA LOADING
+' =================================================================
+
+Private Sub LoadChartData()
+    On Error GoTo ErrorHandler
+    
+    Debug.Print "Loading chart data for ChartID: " & m_ChartID & "   ChartType: " & m_ChartType
+    
+    ' Load chart metadata
+    LoadChartMetadata
+    
+    ' Format grid cells (do this once, early)
+    FormatGridHeaders
+    FormatGridCells
+    
+    ' ADD THIS LINE:
+    PopulateGridHeaders
+    
+    ' Load planetary positions
+    'LoadPlanetaryPositions
+    
+    ' Load aspects
+    'LoadAspects
+    
+    ' Populate aspect grid
+    PopulateAspectGrid
+    
+    ' Update form title
+    Me.Caption = "Chart Display - " & m_ChartTitle
+    
+    Exit Sub
+    
+ErrorHandler:
+    MsgBox "Error loading chart data: " & Err.Description, vbCritical, "Data Load Error"
+    Debug.Print "ERROR in LoadChartData: " & Err.Description
+End Sub
+
+Private Sub LoadChartMetadata()
+    On Error GoTo ErrorHandler
+    
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    Dim sql As String
+    
+    Set db = CurrentDb()
+    
+    ' Get chart information
+    sql = "SELECT c.*, p.FirstName, p.LastName, e.EventName " & _
+          "FROM (tblCharts c " & _
+          "LEFT JOIN tblPeople p ON c.PersonID = p.PersonID) " & _
+          "LEFT JOIN tblEvents e ON c.EventID = e.EventID " & _
+          "WHERE c.ChartID = " & m_ChartID
+          
+    
+    Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
+    
+     Debug.Print "SQL = " & sql
+
+    If Not rs.EOF Then
+        m_ChartType = Nz(rs!chartType, "Unknown")
+        
+        ' Build chart title based on chart type
+        Select Case m_ChartType
+            Case "Natal"
+                m_PersonID = rs!PersonID
+                LoadViewerInformation
+            Case "Event"
+                m_EventID = rs!EventID
+                LoadEventInformation
+            Case "Session"
+                m_SessionID = rs!SessionID
+                LoadSessionInformation
+            Case Else
+                m_ChartTitle = m_ChartType & " Chart - " & Format(rs!ChartDate, "mm/dd/yyyy")
+        End Select
+        
+    Else
+        m_ChartTitle = "Chart Not Found"
+        Me.lblChartTitle.Caption = "Chart ID " & m_ChartID & " not found"
+    End If
+          
+          
+    rs.Close
+    Set db = Nothing
+    
+    Exit Sub
+    
+ErrorHandler:
+    Debug.Print "Error in LoadChartMetadata: " & Err.Description
+    m_ChartTitle = "Error Loading Chart"
+End Sub
+
+
+' =================================================================
+' BUTTON EVENTS
+' =================================================================
+
+Private Sub btnClose_Click()
+    DoCmd.Close acForm, Me.name
+End Sub
+
+Private Sub btnRefresh_Click()
+    LoadChartData
+End Sub
+
+Private Sub btnPrint_Click()
+    On Error GoTo ErrorHandler
+    
+    ' Print the form
+    DoCmd.PrintOut acPrintAll
+    Exit Sub
+    
+ErrorHandler:
+    MsgBox "Error printing chart: " & Err.Description, vbCritical, "Print Error"
+End Sub
+
+' Grid Creation
+Private Sub PopulateGridHeaders()
+    On Error GoTo ErrorHandler
+    
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    Dim sql As String
+    Dim i As Integer
+    
+    Set db = CurrentDb()
+    
+    ' Get celestial bodies in display order
+    sql = "SELECT BodyID, BodyName, Symbol, DisplayOrder " & _
+          "FROM tblCelestialBodies " & _
+          "WHERE IsActive = True " & _
+          "ORDER BY DisplayOrder"
+    
+    Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
+    
+    i = 1
+    Do While Not rs.EOF And i <= 18
+        ' Populate horizontal header
+        Me.Controls("header_" & i).Caption = Nz(rs!Symbol, Left(rs!BodyName, 2))
+        
+        ' Populate vertical header
+        Me.Controls("sidebar_" & i).Caption = Nz(rs!Symbol, Left(rs!BodyName, 2))
+        
+        Debug.Print "Header " & i & ": " & rs!BodyName & " (" & Nz(rs!Symbol, "No Symbol") & ")"
+        
+        rs.MoveNext
+        i = i + 1
+    Loop
+    
+    ' Clear any remaining headers if we have fewer than 18 bodies
+    Do While i <= 18
+        Me.Controls("header_" & i).Caption = ""
+        Me.Controls("sidebar_" & i).Caption = ""
+        i = i + 1
+    Loop
+    
+    rs.Close
+    Set db = Nothing
+    
+    Debug.Print "Grid headers populated successfully"
+    
+    Exit Sub
+    
+ErrorHandler:
+    Debug.Print "Error in PopulateGridHeaders: " & Err.Description
+    If Not rs Is Nothing Then
+        rs.Close
+        Set rs = Nothing
+    End If
+    Set db = Nothing
+End Sub
+
+
+Private Sub PopulateAspectGrid()
+    On Error GoTo ErrorHandler
+    
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    Dim rsBodyMap As DAO.Recordset
+    Dim sql As String
+    Dim i As Integer, j As Integer
+    
+    ' First, clear all grid cells
+    For i = 1 To 18
+        For j = 1 To 18
+            Me.Controls("cell_" & i & "_" & j).value = ""
+            ' Reset to default white background
+            Me.Controls("cell_" & i & "_" & j).backColor = RGB(255, 255, 255)
+        Next j
+    Next i
+    
+    Set db = CurrentDb()
+    
+    ' Create a mapping from BodyID to DisplayOrder position
+    Dim bodyPositions As New Collection
+    sql = "SELECT BodyID, DisplayOrder FROM tblCelestialBodies WHERE IsActive = True ORDER BY DisplayOrder"
+    Set rsBodyMap = db.OpenRecordset(sql, dbOpenSnapshot)
+    
+    Dim pos As Integer
+    pos = 1
+    Do While Not rsBodyMap.EOF And pos <= 18
+        bodyPositions.Add pos, CStr(rsBodyMap!BodyID)
+        Debug.Print "Body mapping: BodyID " & rsBodyMap!BodyID & " -> Position " & pos
+        rsBodyMap.MoveNext
+        pos = pos + 1
+    Loop
+    rsBodyMap.Close
+    
+    ' Get aspects for this chart with aspect type info
+    sql = "SELECT ca.*, asp.Symbol AS AspectSymbol, asp.AspectType " & _
+          "FROM tblChartAspects ca " & _
+          "INNER JOIN tblAspects asp ON ca.AspectID = asp.AspectID " & _
+          "WHERE ca.ChartID = " & m_ChartID
+    
+    Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
+    
+    Do While Not rs.EOF
+        Dim body1Pos As Integer, body2Pos As Integer
+        Dim aspectText As String
+        Dim degrees As Integer
+        Dim cellColor As Long
+        
+        ' Get positions for both bodies
+        On Error Resume Next
+        body1Pos = bodyPositions(CStr(rs!body1ID))
+        body2Pos = bodyPositions(CStr(rs!body2ID))
+        On Error GoTo ErrorHandler
+        
+        If body1Pos > 0 And body2Pos > 0 And body1Pos <= 18 And body2Pos <= 18 Then
+            
+            degrees = Round(rs!ExactDegree)
+            
+             ' Split exact degree into degrees and minutes
+            Dim wholeDegrees As Integer, minutes As Integer
+            wholeDegrees = Int(rs!ExactDegree)
+            minutes = Round((rs!ExactDegree - wholeDegrees) * 60)
+            
+            ' Format: Symbol + "  " + Degrees + A/S + Minutes
+            aspectText = Nz(rs!aspectSymbol, "?") & " " & _
+                        wholeDegrees & _
+                        IIf(rs!OrbitApplying, "A", "S") & _
+                        Format(minutes, "00")
+            
+            ' Set color based on aspect type
+            Select Case UCase(Nz(rs!aspectType, ""))
+                Case "MAJOR"
+                    cellColor = RGB(255, 240, 240)  ' Light red for major aspects
+                Case "MINOR"
+                    cellColor = RGB(240, 255, 240)  ' Light green for minor aspects
+                Case Else
+                    cellColor = RGB(240, 240, 255)  ' Light blue for other aspects
+            End Select
+            
+            ' Populate both cells (aspect works both ways)
+            Me.Controls("cell_" & body1Pos & "_" & body2Pos).value = aspectText
+            Me.Controls("cell_" & body1Pos & "_" & body2Pos).backColor = cellColor
+            
+            Me.Controls("cell_" & body2Pos & "_" & body1Pos).value = aspectText
+            Me.Controls("cell_" & body2Pos & "_" & body1Pos).backColor = cellColor
+            
+            Debug.Print "Aspect: Body " & rs!body1ID & " (pos " & body1Pos & ") " & _
+                       rs!aspectSymbol & " Body " & rs!body2ID & " (pos " & body2Pos & ") = " & aspectText & _
+                       " (" & Nz(rs!aspectType, "Unknown") & ")"
+        End If
+        
+        rs.MoveNext
+    Loop
+    
+    rs.Close
+    Set db = Nothing
+    
+    Debug.Print "Aspect grid populated successfully with color coding"
+    
+    Exit Sub
+    
+ErrorHandler:
+    Debug.Print "Error in PopulateAspectGrid: " & Err.Description
+    If Not rs Is Nothing Then
+        rs.Close
+        Set rs = Nothing
+    End If
+    If Not rsBodyMap Is Nothing Then
+        rsBodyMap.Close
+        Set rsBodyMap = Nothing
+    End If
+    Set db = Nothing
+End Sub
+
+
+Private Sub FormatGridCells()
+    On Error GoTo ErrorHandler
+    
+    Dim i As Integer, j As Integer
+    Dim cellControl As Control
+    
+    ' Format all grid cells (these are TextBox controls)
+    For i = 1 To 18
+        For j = 1 To 18
+            Set cellControl = Me.Controls("cell_" & i & "_" & j)
+            
+            With cellControl
+                ' Set font properties
+                .FontName = "Arial"      ' Sans-serif font
+                .FontSize = 8
+                .TextAlign = 2           ' Center alignment
+                .FontWeight = 400        ' Normal weight
+                
+                ' Set background and border
+                .BackStyle = 1           ' Normal (opaque)
+                .backColor = RGB(255, 255, 255)  ' White background
+                .BorderStyle = 1         ' Solid border
+                .BorderWidth = 1         ' Thin border
+                .BorderColor = RGB(192, 192, 192)  ' Light gray border
+                .ForeColor = RGB(0, 0, 0)          ' Black text
+                
+                ' Make read-only for display
+                .Locked = True
+                .TabStop = False
+            End With
+        Next j
+    Next i
+    
+    Debug.Print "Grid cells formatted successfully"
+    
+    Exit Sub
+    
+ErrorHandler:
+    Debug.Print "Error in FormatGridCells: " & Err.Description & " at cell " & i & "_" & j
+End Sub
+
+Private Sub FormatGridHeaders()
+    On Error GoTo ErrorHandler
+    
+    Dim i As Integer
+    Dim headerControl As Control
+    
+    ' Format headers (these are Label controls, not TextBox controls)
+    For i = 1 To 18
+        ' Horizontal headers
+        
+        Set headerControl = Me.Controls("header_" & i)
+        With headerControl
+            .FontName = "Calibri"
+            .FontSize = 14
+            .FontWeight = 550        ' Bold
+            .TextAlign = 2           ' Center alignment
+            .BackStyle = 1           ' Normal (opaque)
+            .backColor = RGB(240, 240, 240)  ' Light gray background
+            .ForeColor = RGB(0, 0, 0)        ' BLACK TEXT - explicitly set
+            .BorderStyle = 1         ' Solid border
+            .BorderWidth = 1         ' Thin border
+            .BorderColor = RGB(128, 128, 128)  ' Gray border
+        End With
+        
+        ' Vertical headers
+        Set headerControl = Me.Controls("sidebar_" & i)
+        With headerControl
+            .FontName = "Calibri"
+            .FontSize = 14
+            .FontWeight = 550        ' Bold
+            .TextAlign = 2           ' Center alignment
+            .BackStyle = 1           ' Normal (opaque)
+            .backColor = RGB(240, 240, 240)  ' Light gray background
+            .ForeColor = RGB(0, 0, 0)        ' Black text
+            .BorderStyle = 1         ' Solid border
+            .BorderWidth = 1         ' Thin border
+            .BorderColor = RGB(128, 128, 128)  ' Gray border
+        End With
+    Next i
+    
+    Debug.Print "Grid headers formatted successfully"
+    
+    Exit Sub
+    
+ErrorHandler:
+    Debug.Print "Error in FormatGridHeaders: " & Err.Description & " at header " & i
+End Sub
+
+Private Sub btnDiagnostic_Click()
+    Dim i As Integer
+    Dim headerControl As Control
+    
+    ' Check the formatting of each header
+    For i = 1 To 6  ' Just check first 6 headers
+        Set headerControl = Me.Controls("header_" & i)
+        Debug.Print "Header " & i & ": Caption=" & headerControl.Caption & _
+                   ", ForeColor=" & headerControl.ForeColor & _
+                   ", FontWeight=" & headerControl.FontWeight & _
+                   ", FontName=" & headerControl.FontName
+    Next i
+End Sub
+
+Private Sub LoadViewerInformation()
+    On Error GoTo ErrorHandler
+    
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    Dim sql As String
+
+Me.lblHeaderLine1.Visible = False
+Me.lblHeaderLine2.Visible = False
+    
+    Set db = CurrentDb()
+    sql = "SELECT p.FirstName, p.LastName, p.BirthDate, p.BirthTime, " & _
+          "l.City, l.StateProvince, l.Country " & _
+          "FROM tblPeople p LEFT JOIN tblLocations l ON p.LocationID = l.LocationID " & _
+          "WHERE p.PersonID = " & m_PersonID
+    
+    Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
+    
+    If Not rs.EOF Then
+        ' Update form labels with viewer information
+        Me.lblChartTitle.Caption = "Natal Chart - " & Nz(rs!FirstName, "") & " " & Nz(rs!LastName, "")
+        Me.lblChartDate.Caption = "Born: " & Format(rs!BirthDate, "mmmm d, yyyy") & " at " & Format(rs!BirthTime, "h:nn AM/PM")
+        
+        ' Build location string
+        Dim location As String
+        location = Nz(rs!City, "")
+        If Nz(rs!StateProvince, "") <> "" Then
+            location = location & ", " & rs!StateProvince
+        End If
+        If Nz(rs!Country, "") <> "" Then
+            location = location & ", " & rs!Country
+        End If
+        
+        ' Update location label if it exists
+        On Error Resume Next
+        Me.lblLocation.Caption = "Location: " & location
+        On Error GoTo ErrorHandler
+    Else
+        Me.lblChartTitle.Caption = "Viewer Not Found"
+    End If
+    
+    rs.Close
+    Set rs = Nothing
+    Set db = Nothing
+    Exit Sub
+    
+ErrorHandler:
+    Debug.Print "Error loading viewer information: " & Err.Description
+    Me.lblChartTitle.Caption = "Error Loading Viewer Data"
+End Sub
+
+
+Private Sub LoadEventInformation()
+    On Error GoTo ErrorHandler
+    
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    Dim sql As String
+
+Me.lblHeaderLine1.Visible = False
+Me.lblHeaderLine2.Visible = False
+    
+   
+    Set db = CurrentDb()
+    sql = "SELECT p.*, " & _
+          "l.City, l.StateProvince, l.Country " & _
+          "FROM tblEvents p LEFT JOIN tblLocations l ON p.LocationID = l.LocationID " & _
+          "WHERE p.EventID = " & m_EventID
+    
+    Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
+    
+    If Not rs.EOF Then
+        ' Update form labels with viewer information
+        Me.lblChartTitle.Caption = "Event Chart - " & Nz(rs!eventName, "")
+        Me.lblChartDate.Caption = "Event Date/Time: " & Format(rs!eventDate, "mmmm d, yyyy") & " at " & Format(rs!eventTime, "h:nn AM/PM")
+        
+        ' Build location string
+        Dim location As String
+        location = Nz(rs!City, "")
+        If Nz(rs!StateProvince, "") <> "" Then
+            location = location & ", " & rs!StateProvince
+        End If
+        If Nz(rs!Country, "") <> "" Then
+            location = location & ", " & rs!Country
+        End If
+        
+        ' Update location label if it exists
+        On Error Resume Next
+        Me.lblLocation.Caption = "Event Location: " & location
+        On Error GoTo ErrorHandler
+    Else
+        Me.lblChartTitle.Caption = "Event Not Found"
+    End If
+    
+    rs.Close
+    Set rs = Nothing
+    Set db = Nothing
+    Exit Sub
+    
+ErrorHandler:
+    Debug.Print "Error loading event information: " & Err.Description
+    Me.lblChartTitle.Caption = "Error Loading Event Data"
+End Sub
+
+
+Private Sub LoadSessionInformation()
+    On Error GoTo ErrorHandler
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    Dim sql As String
+    
+Me.lblHeaderLine1.Visible = True
+Me.lblHeaderLine2.Visible = True
+    
+    Set db = CurrentDb()
+    
+    sql = "SELECT s.*, p.*, e.*, " & _
+          "l.City, l.StateProvince, l.Country " & _
+         "FROM ((tblSessions s LEFT JOIN tblLocations l ON s.LocationID = l.LocationID) " & _
+         "LEFT JOIN tblPeople p ON s.PersonID = p.PersonID) " & _
+         "LEFT JOIN tblEvents e ON s.EventID = e.EventID " & _
+          "WHERE s.SessionID = " & m_SessionID
+   
+ Debug.Print "LoadSessionInformation sql: " & sql
+    
+    Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
+    
+    If Not rs.EOF Then
+        ' Update form labels with viewer information
+        Me.lblChartTitle.Caption = "Session Chart"
+        Me.lblChartDate.Caption = "Session Date/Time: " & Format(rs!sessionDate, "mmmm d, yyyy") & " at " & Format(rs!SessionStartTime, "h:nn AM/PM")
+        
+        Me.lblHeaderLine1.Caption = "Viewer: " & rs!FirstName & " " & rs!LastName
+        Me.lblHeaderLine2.Caption = "Event: " & Nz(rs!eventName, "<no name>") & " | " & rs!eventDate & " | " & rs!eventTime
+        
+        
+        ' Build location string
+        Dim location As String
+        location = Nz(rs!City, "")
+        If Nz(rs!StateProvince, "") <> "" Then
+            location = location & ", " & rs!StateProvince
+        End If
+        If Nz(rs!Country, "") <> "" Then
+            location = location & ", " & rs!Country
+        End If
+        
+        ' Update location label if it exists
+        On Error Resume Next
+        Me.lblLocation.Caption = "Session Location: " & location
+        On Error GoTo ErrorHandler
+    Else
+        Me.lblChartTitle.Caption = "Session Not Found"
+    End If
+    
+    rs.Close
+    Set rs = Nothing
+    Set db = Nothing
+    Exit Sub
+    
+ErrorHandler:
+    Debug.Print "Error loading session information: " & Err.Description
+    Me.lblChartTitle.Caption = "Error Loading session Data"
+End Sub
+
+

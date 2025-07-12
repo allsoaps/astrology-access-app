@@ -1,0 +1,471 @@
+VERSION 1.0 CLASS
+BEGIN
+  MultiUse = -1  'True
+END
+Attribute VB_Name = "Form_frmSessionSearch"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = True
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Option Compare Database
+Option Explicit
+
+' PURPOSE: Session Management form with mutual exclusion selection (Viewer Mode vs Event Mode)
+' CALLED FROM: Main navigation or menu forms
+' DEPENDENCIES: tblPeople, tblEvents, tblAssignments, tblSessions, tblImpressions
+' WORKFLOW: Select Viewer OR Event (not both) - selection clears the other dropdown
+' VIEWER MODE: Shows all sessions for selected viewer across all their assigned events
+' EVENT MODE: Shows all assigned viewers for selected event with session status/counts
+' LAST MODIFIED: [Current Date] - Implemented mutual exclusion workflow
+
+' Form-level variables to prevent circular updates when clearing selections
+Private m_UpdatingViewer As Boolean
+Private m_UpdatingEvent As Boolean
+
+'================'
+' FORM EVENTS    '
+'================'
+
+Private Sub Form_Load()
+    On Error GoTo ErrorHandler
+    
+    ' Initialize flags
+    m_UpdatingViewer = False
+    m_UpdatingEvent = False
+    
+    ' Set up both combo boxes with initial data
+    SetupViewerCombo
+    SetupEventCombo
+    
+    ' Clear any selections initially
+    Me.cboViewer = Null
+    Me.cboEvent = Null
+    
+    ' Initialize results display
+    Me.lblResultsHeader.Visible = False
+    ClearSubformResults
+    
+    Exit Sub
+    
+ErrorHandler:
+    MsgBox "Error loading Session Search form: " & Err.Description, vbCritical, "Form Load Error"
+End Sub
+
+'================'
+' COMBO BOX EVENTS '
+'================'
+
+Private Sub cboViewer_AfterUpdate()
+    ' PURPOSE: Clear event selection when viewer is selected (mutual exclusion)
+    ' CALLED FROM: User selecting a viewer in cboViewer
+    
+    On Error GoTo ErrorHandler
+    
+    ' Prevent circular updates
+    If m_UpdatingViewer Then Exit Sub
+    
+    m_UpdatingEvent = True
+    
+    ' Clear the event selection to prevent confusion
+    Me.cboEvent = Null
+    
+    ' If we have a viewer selected, we're now in "Viewer Mode"
+    ' The search will show all sessions for this viewer
+    
+    m_UpdatingEvent = False
+    Exit Sub
+    
+ErrorHandler:
+    m_UpdatingEvent = False
+    MsgBox "Error updating viewer selection: " & Err.Description, vbExclamation, "Selection Error"
+End Sub
+
+Private Sub cboEvent_AfterUpdate()
+    ' PURPOSE: Clear viewer selection when event is selected (mutual exclusion)
+    ' CALLED FROM: User selecting an event in cboEvent
+    
+    On Error GoTo ErrorHandler
+    
+    ' Prevent circular updates
+    If m_UpdatingEvent Then Exit Sub
+    
+    m_UpdatingViewer = True
+    
+    ' Clear the viewer selection to prevent confusion
+    Me.cboViewer = Null
+    
+    ' If we have an event selected, we're now in "Event Mode"
+    ' The search will show all viewers assigned to this event
+    
+    m_UpdatingViewer = False
+    Exit Sub
+    
+ErrorHandler:
+    m_UpdatingViewer = False
+    MsgBox "Error updating event selection: " & Err.Description, vbExclamation, "Selection Error"
+End Sub
+
+'================'
+' BUTTON EVENTS  '
+'================'
+
+Private Sub btnSearch_Click()
+    ' PURPOSE: Search for sessions based on selected criteria (Viewer Mode vs Event Mode)
+    ' CALLED FROM: User clicking Search button
+    
+    On Error GoTo ErrorHandler
+    
+    If Not IsNull(Me.cboViewer) Then
+        ' VIEWER MODE: Show all sessions for the selected viewer
+        SearchByViewer Me.cboViewer
+    ElseIf Not IsNull(Me.cboEvent) Then
+        ' EVENT MODE: Show all assigned viewers for the selected event (with session counts)
+        SearchByEvent Me.cboEvent
+    Else
+        ' No selection made - clear results and show message
+        Me.lblResultsHeader.Visible = False
+        ClearSubformResults
+        MsgBox "Please select either a Viewer or an Event to search.", vbInformation, "No Selection"
+    End If
+    
+    Exit Sub
+    
+ErrorHandler:
+    MsgBox "Error searching sessions: " & Err.Description, vbCritical, "Search Error"
+End Sub
+
+Private Sub btnViewAssociatedImpressions_Click()
+    ' PURPOSE: Open Impressions form for the selected row in results
+    ' CALLED FROM: User clicking View Associated Impressions button on main form
+    
+    On Error GoTo ErrorHandler
+    
+    ' Check if subform has a current record
+    If Me.subResults.Form.RecordsetClone.recordCount = 0 Then
+        MsgBox "No results to view. Please search first.", vbInformation, "No Results"
+        Exit Sub
+    End If
+    
+    If Me.subResults.Form.NewRecord Then
+        MsgBox "Please select a row to view impressions.", vbInformation, "No Selection"
+        Exit Sub
+    End If
+    
+    ' Get the PersonID and EventID from current subform row
+    Dim PersonID As Long
+    Dim EventID As Long
+    
+    PersonID = Me.subResults.Form.Controls("PersonID")
+    EventID = Me.subResults.Form.Controls("EventID")
+    
+    If PersonID = 0 Or EventID = 0 Then
+        MsgBox "Invalid selection. Please select a valid row.", vbExclamation, "Invalid Selection"
+        Exit Sub
+    End If
+    
+    ' Check if session exists and has impressions
+    Dim sessionExists As Boolean
+    Dim hasImpressions As Boolean
+    Dim SessionID As Long
+    
+    SessionID = GetSessionID(PersonID, EventID)
+    sessionExists = (SessionID > 0)
+    
+    If sessionExists Then
+        hasImpressions = (GetImpressionCount(SessionID) > 0)
+    End If
+    
+    ' Apply business logic
+    If Not sessionExists Then
+        MsgBox "No session exists for this viewer and event. Please create a session first using the Session Manager.", _
+               vbExclamation, "No Session Found"
+        Exit Sub
+    End If
+    
+    If Not hasImpressions Then
+        MsgBox "A session exists but has no impressions. Please add impressions first using the Session Manager.", _
+               vbExclamation, "No Impressions Found"
+        Exit Sub
+    End If
+    
+    ' Open Impressions form with the SessionID
+    DoCmd.OpenForm "frmImpressions", acViewNormal, , , , acDialog, CStr(SessionID)
+    
+    ' Refresh the current view after Impressions form closes
+    RefreshCurrentSearch
+    
+    Exit Sub
+    
+ErrorHandler:
+    MsgBox "Error viewing associated impressions: " & Err.Description, vbCritical, "View Error"
+End Sub
+
+Private Sub btnClose_Click()
+    ' PURPOSE: Close the form
+    DoCmd.Close acForm, Me.name
+End Sub
+
+'================'
+' ADDITIONAL HELPER METHODS '
+'================'
+
+Private Sub ClearAllSelections()
+    ' PURPOSE: Clear both viewer and event selections and results
+    ' CALLED FROM: Could be used by a "Clear" button or reset functionality
+    
+    m_UpdatingViewer = True
+    m_UpdatingEvent = True
+    
+    Me.cboViewer = Null
+    Me.cboEvent = Null
+    Me.lblResultsHeader.Visible = False
+    ClearSubformResults
+    
+    m_UpdatingViewer = False
+    m_UpdatingEvent = False
+End Sub
+
+Private Sub ClearSubformResults()
+    ' PURPOSE: Clear the subform results display
+    ' CALLED FROM: Form_Load, btnSearch_Click, ClearAllSelections
+    
+    On Error Resume Next
+    Me.subResults.Form.RecordSource = ""
+    On Error GoTo 0
+End Sub
+
+Private Sub RefreshCurrentSearch()
+    ' PURPOSE: Refresh the current search results after data changes
+    ' CALLED FROM: After Session Manager or Impressions forms close
+    
+    If Not IsNull(Me.cboViewer) Then
+        SearchByViewer Me.cboViewer
+    ElseIf Not IsNull(Me.cboEvent) Then
+        SearchByEvent Me.cboEvent
+    End If
+End Sub
+
+Private Function GetSessionID(PersonID As Long, EventID As Long) As Long
+    ' PURPOSE: Get SessionID for the specified viewer and event
+    ' CALLED FROM: btnViewAssociatedImpressions_Click
+    ' PARAMETERS: PersonID and EventID
+    ' RETURNS: SessionID if exists, 0 if not found
+    
+    On Error GoTo ErrorHandler
+    
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    Dim sql As String
+    
+    Set db = CurrentDb()
+    sql = "SELECT SessionID FROM tblSessions WHERE PersonID = " & PersonID & " AND EventID = " & EventID
+    Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
+    
+    If Not rs.EOF Then
+        GetSessionID = rs!SessionID
+    Else
+        GetSessionID = 0
+    End If
+    
+    rs.Close
+    Set rs = Nothing
+    Set db = Nothing
+    Exit Function
+    
+ErrorHandler:
+    GetSessionID = 0
+    If Not rs Is Nothing Then
+        rs.Close
+        Set rs = Nothing
+    End If
+    Set db = Nothing
+End Function
+
+Private Function GetImpressionCount(SessionID As Long) As Long
+    ' PURPOSE: Get count of impressions for the specified session
+    ' CALLED FROM: btnViewAssociatedImpressions_Click
+    ' PARAMETERS: SessionID
+    ' RETURNS: Count of active impressions
+    
+    On Error GoTo ErrorHandler
+    
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    Dim sql As String
+    
+    Set db = CurrentDb()
+    sql = "SELECT COUNT(*) AS ImpCount FROM tblImpressions " & _
+          "WHERE SessionID = " & SessionID & " " & _
+          "AND (DateDeleted IS NULL OR DateDeleted = #1/1/1900#)"
+    Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
+    
+    If Not rs.EOF Then
+        GetImpressionCount = rs!ImpCount
+    Else
+        GetImpressionCount = 0
+    End If
+    
+    rs.Close
+    Set rs = Nothing
+    Set db = Nothing
+    Exit Function
+    
+ErrorHandler:
+    GetImpressionCount = 0
+    If Not rs Is Nothing Then
+        rs.Close
+        Set rs = Nothing
+    End If
+    Set db = Nothing
+End Function
+
+'================'
+' HELPER METHODS '
+'================'
+
+Private Sub SetupViewerCombo()
+    ' PURPOSE: Initialize viewer combo with all viewers who have event assignments
+    ' CALLED FROM: Form_Load and when event selection is cleared
+    
+    On Error GoTo ErrorHandler
+    
+    Dim sql As String
+    
+    sql = "SELECT DISTINCT p.PersonID, p.LastName, p.FirstName, " & _
+          "p.LastName & ', ' & p.FirstName AS ViewerName " & _
+          "FROM tblPeople p " & _
+          "INNER JOIN tblAssignments a ON p.PersonID = a.PersonID " & _
+          "ORDER BY p.LastName, p.FirstName"
+    
+    With Me.cboViewer
+        .RowSource = sql
+        .ColumnCount = 4
+        .BoundColumn = 1        ' PersonID
+        .ColumnWidths = "0in;0in;0in;2.5in"  ' Hide PersonID, LastName, FirstName; show ViewerName
+        .LimitToList = True
+    End With
+    
+    Exit Sub
+    
+ErrorHandler:
+    MsgBox "Error setting up viewer dropdown: " & Err.Description, vbExclamation, "Setup Error"
+End Sub
+
+Private Sub SetupEventCombo()
+    ' PURPOSE: Initialize event combo with all events that have viewer assignments
+    ' CALLED FROM: Form_Load and when viewer selection is cleared
+    
+    On Error GoTo ErrorHandler
+    
+    Dim sql As String
+    
+    sql = "SELECT DISTINCT e.EventID, e.EventDate, e.EventName, " & _
+          "IIf(IsNull(e.EventName) OR e.EventName='', '<no name>', e.EventName) AS txtEventName, " & _
+          "Format(e.EventDate,'mm/dd/yyyy') & ' - ' & " & _
+          "IIf(IsNull(e.EventName) OR e.EventName='', '<no name>', e.EventName) AS EventDisplay " & _
+          "FROM tblEvents e " & _
+          "INNER JOIN tblAssignments a ON e.EventID = a.EventID " & _
+          "ORDER BY e.EventDate DESC, EventName"
+    
+    With Me.cboEvent
+        .RowSource = sql
+        .ColumnCount = 5
+        .BoundColumn = 1        ' EventID
+        .ColumnWidths = "0in;0in;0in;0in;3.5in"  ' Hide EventID, EventDate, EventName; show EventDisplay
+        .LimitToList = True
+    End With
+    
+    Exit Sub
+    
+ErrorHandler:
+    MsgBox "Error setting up event dropdown: " & Err.Description, vbExclamation, "Setup Error"
+End Sub
+
+Private Sub SearchByViewer(ViewerPersonID As Long)
+    On Error GoTo ErrorHandler
+    
+    Dim sql As String
+    sql = "SELECT e.EventID, e.EventName, e.EventDate " & _
+          "FROM tblEvents e " & _
+          "INNER JOIN tblAssignments a ON e.EventID = a.EventID " & _
+          "WHERE a.PersonID = " & ViewerPersonID & " " & _
+          "ORDER BY e.EventDate DESC"
+    
+    Me.subResults.Form.RecordSource = sql
+    Me.lblResultsHeader.Caption = "Test Results"
+    Me.lblResultsHeader.Visible = True
+    
+    Exit Sub
+    
+ErrorHandler:
+    MsgBox "Error: " & Err.Description, vbCritical
+End Sub
+
+Private Sub SearchByEvent(EventID As Long)
+    ' PURPOSE: EVENT MODE - Show all assigned viewers for the selected event with their session status
+    ' CALLED FROM: btnSearch_Click when event is selected
+    ' PARAMETERS: EventID - The EventID of the selected event
+    
+    On Error GoTo ErrorHandler
+    
+    ' Build the SQL for event mode directly
+    Dim sql As String
+    sql = "SELECT " & _
+          "p.PersonID, " & _
+          EventID & " AS EventID, " & _
+          "p.LastName & ', ' & p.FirstName AS ViewerName, " & _
+          "IIf(s.SessionDate IS NULL, 'blank', Format(s.SessionDate,'mm/dd/yyyy')) AS SessionDate, " & _
+          "IIf(s.SessionID IS NULL, '0', " & _
+          "(SELECT COUNT(*) FROM tblImpressions i WHERE i.SessionID = s.SessionID " & _
+          " AND (i.DateDeleted IS NULL OR i.DateDeleted = #1/1/1900#))) AS ImpressionCount, " & _
+          "IIf(s.SessionID IS NULL, '0', " & _
+          "IIf((SELECT COUNT(*) FROM tblImpressions i WHERE i.SessionID = s.SessionID " & _
+          " AND (i.DateDeleted IS NULL OR i.DateDeleted = #1/1/1900#)) = 0, '0', " & _
+          "Format((SELECT AVG(i.Success) FROM tblImpressions i WHERE i.SessionID = s.SessionID " & _
+          " AND (i.DateDeleted IS NULL OR i.DateDeleted = #1/1/1900#)), '0.00'))) AS AvgSuccess, " & _
+          "IIf(s.SessionChartGenerated IS NULL, 'No', IIf(s.SessionChartGenerated, 'Yes', 'No')) AS SessionChart, " & _
+          "'EVENT' AS DisplayMode " & _
+          "FROM tblPeople p " & _
+          "INNER JOIN tblAssignments a ON p.PersonID = a.PersonID " & _
+          "LEFT JOIN tblSessions s ON p.PersonID = s.PersonID AND s.EventID = " & EventID & " " & _
+          "WHERE a.EventID = " & EventID & " " & _
+          "ORDER BY p.LastName, p.FirstName"
+    
+    ' Set the subform's RecordSource directly
+    Me.subResults.Form.RecordSource = sql
+    
+    ' Get event name for header display
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    Dim eventName As String
+    
+    Set db = CurrentDb()
+    Set rs = db.OpenRecordset("SELECT EventName, EventDate FROM tblEvents WHERE EventID = " & EventID, dbOpenSnapshot)
+    
+    If Not rs.EOF Then
+        Dim eventDisplay As String
+        eventDisplay = Format(rs!eventDate, "mm/dd/yyyy") & " - "
+        If IsNull(rs!eventName) Or rs!eventName = "" Then
+            eventDisplay = eventDisplay & "<no name>"
+        Else
+            eventDisplay = eventDisplay & rs!eventName
+        End If
+        eventName = eventDisplay
+    Else
+        eventName = "Unknown Event"
+    End If
+    
+    rs.Close
+    Set rs = Nothing
+    Set db = Nothing
+    
+    ' Update the results header
+    Me.lblResultsHeader.Caption = eventName
+    Me.lblResultsHeader.Visible = True
+    
+    Exit Sub
+    
+ErrorHandler:
+    MsgBox "Error searching by event: " & Err.Description, vbCritical, "Search Error"
+End Sub
+

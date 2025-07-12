@@ -1,0 +1,494 @@
+VERSION 1.0 CLASS
+BEGIN
+  MultiUse = -1  'True
+END
+Attribute VB_Name = "Form_frmStudentSearch"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = True
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Option Compare Database
+Option Explicit
+
+Private m_PersonID As Long  ' Track the current PersonID
+
+
+Private Sub btnEvents_Click()
+'Private Sub btnViewers_Click()
+    On Error GoTo ErrorHandler
+    
+    ' Get the selected PersonID from the list box
+    Dim selectedPersonID As Long
+    selectedPersonID = Nz(Me.lstStudents.value, 0)
+    
+    If selectedPersonID = 0 Then
+        MsgBox "Please select a viewer from the list to assign events.", vbInformation, "No Selection"
+        Exit Sub
+    End If
+    
+    ' Get the Viewer Name for the selected viewer
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    Dim viewerName As String
+    
+    Set db = CurrentDb()
+    Set rs = db.OpenRecordset("SELECT FirstName, LastName FROM tblPeople WHERE PersonID = " & selectedPersonID, dbOpenSnapshot)
+    
+    If Not rs.EOF Then
+        viewerName = rs!FirstName & " " & rs!LastName
+    Else
+        viewerName = ""
+    End If
+    
+    rs.Close
+    Set rs = Nothing
+    Set db = Nothing
+    
+    ' Pass the PersonID and viewerName to the event assignment form via OpenArgs
+    ' The format is "PersonID|viewerName" (same format used in other forms)
+    Dim openArgs As String
+    openArgs = selectedPersonID & "|" & viewerName
+    
+    ' Open the event assignment form (frmEventAssignList) in Dialog mode
+    ' This form allows users to assign/unassign events and shows current assignments
+    DoCmd.OpenForm "frmEventAssignList", acViewNormal, , , , acDialog, openArgs
+    
+    ' Optionally refresh the list after viewer assignment changes
+    ' (in case any event data was updated)
+    Me.lstStudents.Requery
+    
+    Exit Sub
+
+ErrorHandler:
+    ' Clean up resources
+    If Not rs Is Nothing Then
+        rs.Close
+        Set rs = Nothing
+    End If
+    Set db = Nothing
+    
+    MsgBox "An unexpected error occurred while trying to open the event assignment form." & vbCrLf & _
+           "Error: " & Err.Description, vbCritical, "Error"
+'End Sub
+End Sub
+
+'=== Initialize form ===
+Private Sub Form_Load()
+    Me.cboSearchField = ""
+    Me.txtSearchText = ""
+End Sub
+
+'=== Populate the list with top 100 records ===
+Private Sub SetupListBox()
+    With Me.lstStudents
+        .RowSourceType = "Table/Query"
+        .ColumnCount = 7
+        .BoundColumn = 1
+        .ColumnHeads = False
+        .ColumnWidths = "1cm;3cm;3cm;2.5cm;2.5cm;2.5cm;3cm"
+        .RowSource = _
+            "SELECT p.PersonID, p.FirstName, p.LastName, " & _
+            "Format(p.BirthDate,'mm/dd/yyyy') AS DOB, " & _
+            "Format(p.BirthTime,'hh:nn:ss') AS TOB, " & _
+            "Nz(p.Initials,'') AS Initials, " & _
+            "l.City & IIf(Len(l.[StateProvince])>0,', ' & l.[StateProvince],'') & ', ' & l.Country AS BirthPlace " & _
+            "FROM tblPeople AS p " & _
+            "LEFT JOIN tblLocations AS l ON p.LocationID = l.LocationID " & _
+            "ORDER BY p.LastName, p.FirstName;"
+    End With
+End Sub
+
+'=== Search button ===
+Private Sub btnSearch_Click()
+    On Error GoTo ErrHandler
+    
+    Dim strSQL   As String
+    Dim strWhere As String
+    Dim db       As DAO.Database
+    Dim rs       As DAO.Recordset
+    Dim txt      As String
+    
+    txt = Nz(Me.txtSearchText, "")
+    If Len(Trim(txt)) = 0 Then
+        SetupListBox
+        Exit Sub
+    End If
+    
+    ' Base SELECT
+    strSQL = _
+      "SELECT p.PersonID, p.FirstName, p.LastName, " & _
+      "Format(p.BirthDate,'mm/dd/yyyy') AS DOB, " & _
+      "Format(p.BirthTime,'hh:nn:ss') AS TOB, " & _
+      "Nz(p.Initials,'') AS Initials, " & _
+      "l.City & IIf(Len(l.[StateProvince])>0,', ' & l.[StateProvince],'') & ', ' & l.Country AS BirthPlace " & _
+      "FROM tblPeople AS p " & _
+      "LEFT JOIN tblLocations AS l ON p.LocationID = l.LocationID "
+    
+    ' Build WHERE clause
+    Select Case Me.cboSearchField
+        Case "ID", "PersonID"
+            ' exact match on the numeric key
+            If IsNumeric(txt) Then
+                strWhere = "WHERE p.PersonID = " & CLng(txt) & " "
+            Else
+                MsgBox "Please enter a numeric ID.", vbExclamation
+                Exit Sub
+            End If
+            
+        Case "LastName"
+            strWhere = "WHERE p.LastName LIKE '*" & Replace(txt, "'", "''") & "*' "
+            
+        Case "FirstName"
+            strWhere = "WHERE p.FirstName LIKE '*" & Replace(txt, "'", "''") & "*' "
+            
+        Case "FullName"
+            strWhere = "WHERE (p.FirstName & ' ' & p.LastName) LIKE '*" & Replace(txt, "'", "''") & "*' "
+            
+        Case "BirthDate"
+            If IsDate(txt) Then
+                strWhere = "WHERE p.BirthDate = #" & Format(CDate(txt), "mm\/dd\/yyyy") & "# "
+            Else
+                strWhere = "WHERE Format(p.BirthDate,'mm/dd/yyyy') LIKE '*" & Replace(txt, "'", "''") & "*' "
+            End If
+            
+        Case "Location"
+            strWhere = _
+              "WHERE l.City LIKE '*" & Replace(txt, "'", "''") & "*' OR " & _
+                    "l.[StateProvince] LIKE '*" & Replace(txt, "'", "''") & "*' OR " & _
+                    "l.Country LIKE '*" & Replace(txt, "'", "''") & "*' "
+                    
+        Case "Country"
+            strWhere = "WHERE l.Country LIKE '*" & Replace(txt, "'", "''") & "*' "
+            
+        Case Else
+            strWhere = ""
+    End Select
+    
+    ' Finalize and run
+    strSQL = strSQL & strWhere & "ORDER BY p.LastName, p.FirstName;"
+    Me.lstStudents.RowSource = strSQL
+    
+    Set db = CurrentDb
+    Set rs = db.OpenRecordset(strSQL, dbOpenSnapshot)
+    If rs.recordCount = 0 Then
+        MsgBox "No students found matching your search criteria.", vbInformation, "No Results"
+    End If
+
+CleanExit:
+    On Error Resume Next
+    rs.Close: Set rs = Nothing
+    Set db = Nothing
+    Exit Sub
+
+ErrHandler:
+    MsgBox "Error during search: " & Err.Number & " - " & Err.Description, vbExclamation, "Search Error"
+    Resume CleanExit
+End Sub
+
+
+'=== Clear button ===
+Private Sub btnClear_Click()
+    Me.txtSearchText = Null
+    Me.cboSearchField = "LastName"
+    SetupListBox
+End Sub
+
+'=== Add New Student ===
+Private Sub btnAddNew_Click()
+    DoCmd.OpenForm "frmStudentNew", DataMode:=acFormAdd
+End Sub
+
+'=== Edit Selected Student ===
+Private Sub btnEdit_Click()
+    Dim pid As Long
+    pid = Nz(Me.lstStudents.value, 0)
+    If pid = 0 Then
+        MsgBox "Please select a student to edit.", vbInformation, "No Selection"
+        Exit Sub
+    End If
+    DoCmd.OpenForm _
+      "frmStudentEdit", _
+      DataMode:=acFormEdit, _
+      openArgs:=CStr(pid)
+End Sub
+
+'=== View Natal Chart ===
+Private Sub btnViewChart_Click()
+    On Error GoTo ErrorHandler
+    
+    m_PersonID = Nz(Me.lstStudents.value, 0)
+    
+    ' Validate that we have a PersonID and chart exists
+    If m_PersonID = 0 Then
+        MsgBox "No viewer record found.", vbExclamation, "No Record"
+        Exit Sub
+    End If
+    
+    ' Double-check that chart exists
+    If Not GetChartStatus(m_PersonID) Then
+        MsgBox "No natal chart found for this viewer. Please generate a chart first.", vbExclamation, "No Chart"
+        Exit Sub
+    End If
+    
+    ' Get the ChartID for this person's natal chart
+    Dim chartID As Long
+    chartID = GetNatalChartID(m_PersonID)
+    
+    If chartID = 0 Then
+        MsgBox "Unable to find natal chart in database. Please regenerate the chart.", vbExclamation, "Chart Not Found"
+        Exit Sub
+    End If
+    
+    ' Open the aspect grid with the natal chart
+    DoCmd.OpenForm "frmAspectHalfGrid", acNormal, , , , , CStr(chartID)
+    
+    Exit Sub
+    
+ErrorHandler:
+    MsgBox "Error opening natal chart view: " & Err.Description, vbExclamation, "Error"
+End Sub
+
+Private Function GetChartStatus(PersonID As Long) As Boolean
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    Dim sql As String
+    
+    On Error GoTo ErrorHandler
+    
+    Set db = CurrentDb()
+    sql = "SELECT NatalChartGenerated FROM tblPeople WHERE PersonID = " & PersonID
+    Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
+    
+    If Not rs.EOF Then
+        GetChartStatus = Nz(rs!NatalChartGenerated, False)
+    Else
+        GetChartStatus = False
+    End If
+    
+    rs.Close
+    Set rs = Nothing
+    Set db = Nothing
+    Exit Function
+    
+ErrorHandler:
+    GetChartStatus = False
+    If Not rs Is Nothing Then
+        On Error Resume Next
+        rs.Close
+        Set rs = Nothing
+    End If
+    Set db = Nothing
+End Function
+
+Private Function GetNatalChartID(PersonID As Long) As Long
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    Dim sql As String
+    
+    On Error GoTo ErrorHandler
+    
+    Set db = CurrentDb()
+    sql = "SELECT ChartID FROM tblCharts WHERE PersonID = " & PersonID & " AND ChartType = 'Natal'"
+    Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
+    
+    If Not rs.EOF Then
+        GetNatalChartID = rs!chartID
+    Else
+        GetNatalChartID = 0
+    End If
+    
+    rs.Close
+    Set rs = Nothing
+    Set db = Nothing
+    Exit Function
+    
+ErrorHandler:
+    GetNatalChartID = 0
+    If Not rs Is Nothing Then
+        On Error Resume Next
+        rs.Close
+        Set rs = Nothing
+    End If
+    Set db = Nothing
+End Function
+
+
+
+'=== Helper to check chart status ===
+Private Function ChartGenerated(PersonID As Long) As Boolean
+    Dim rs As DAO.Recordset
+    Set rs = CurrentDb.OpenRecordset( _
+        "SELECT NatalChartGenerated FROM tblPeople WHERE PersonID=" & PersonID, _
+        dbOpenSnapshot)
+    ChartGenerated = (Not rs.EOF And rs!NatalChartGenerated)
+    rs.Close: Set rs = Nothing
+End Function
+
+'=== Close Form ===
+Private Sub btnClose_Click()
+    DoCmd.Close acForm, Me.name
+End Sub
+
+Private Sub Form_Open(Cancel As Integer)
+    SetupListBox
+End Sub
+
+'=== Double-click list opens record ===
+Private Sub lstStudents_DblClick(Cancel As Integer)
+    btnEdit_Click
+End Sub
+
+Private Sub btnViewSessions_Click()
+    On Error GoTo ErrorHandler
+    
+    m_PersonID = Nz(Me.lstStudents.value, 0)
+
+    ' Check for a valid PersonID. This form is for editing, so it must exist.
+    If IsNull(m_PersonID) Or m_PersonID = 0 Then
+        MsgBox "Cannot view sessions for an unsaved viewer. Please save this record first.", vbExclamation, "Save Required"
+        Exit Sub
+    End If
+    
+    ' Pass the context to the Session Manager form.
+    ' Format: "PersonID=123"
+    Dim openArgs As String
+    openArgs = "PersonID=" & m_PersonID
+    
+    ' Open the Session Manager form
+    DoCmd.OpenForm "frmSessionManager", acNormal, , , , , openArgs
+    
+    Exit Sub
+
+ErrorHandler:
+    MsgBox "An error occurred opening the Session Manager: " & Err.Description, vbCritical, "Error"
+End Sub
+
+Private Sub btnGenerateNatalChart_Click()
+    On Error GoTo ErrorHandler
+    
+    m_PersonID = Nz(Me.lstStudents.value, 0)
+    
+    ' Validate that we have a PersonID
+    If m_PersonID = 0 Then
+        MsgBox "No viewer highlighted. Select a viewer.", vbExclamation, "Select a Row"
+        Exit Sub
+    End If
+    
+    ' Validate required data for chart generation
+'    If IsNull(Me.lstStudents.DOB.value) Or IsNull(Me.lstStudents.TOB.value) Then
+'        MsgBox "Birth Date and Birth Time are required for natal chart generation.", vbExclamation, "Missing Data"
+'        Exit Sub
+'    End If
+    
+'    If IsNull(Me.txtLatitude.value) Or IsNull(Me.txtLongitude.value) Then
+'        MsgBox "Location coordinates are required for natal chart generation." & vbCrLf & _
+'               "Please use the 'Get Coordinates' button first.", vbExclamation, "Missing Coordinates"
+'        Exit Sub
+'    End If
+    
+    ' Show confirmation for regeneration
+    Dim chartExists As Boolean
+    chartExists = GetChartStatus(m_PersonID)
+    
+    If chartExists Then
+        If MsgBox("A natal chart already exists for this student. Do you want to regenerate it?", _
+                  vbQuestion + vbYesNo, "Regenerate Chart") = vbNo Then
+            Exit Sub
+        End If
+    End If
+    
+    ' Change cursor to hourglass
+    DoCmd.Hourglass True
+    
+    ' Call the WORKING function from modSimpleChart
+    Dim Success As Boolean
+    Success = modSimpleChart.GenerateNatalChart(m_PersonID)
+    
+    ' Turn off hourglass
+    DoCmd.Hourglass False
+    
+    If Success Then
+        ' Update the controls to reflect the new chart status
+'        UpdateChartControls
+        MsgBox "Natal chart generated successfully!", vbInformation, "Chart Generated"
+    Else
+        MsgBox "Failed to generate natal chart. Please check the error messages.", vbExclamation, "Generation Failed"
+    End If
+    
+    Exit Sub
+    
+ErrorHandler:
+    DoCmd.Hourglass False
+    MsgBox "Error generating natal chart: " & Err.Description, vbExclamation, "Error"
+End Sub
+
+
+
+Private Sub btnViewNatalChart_Click()
+    On Error GoTo ErrorHandler
+    
+    m_PersonID = Nz(Me.lstStudents.value, 0)
+    
+    ' Validate that we have a PersonID and chart exists
+    If m_PersonID = 0 Then
+        MsgBox "No viewer record selected.", vbExclamation, "No Record"
+        Exit Sub
+    End If
+    
+    ' Double-check that chart exists
+    If Not GetChartStatus(m_PersonID) Then
+        MsgBox "No natal chart found for this student. Please generate a chart first.", vbExclamation, "No Chart"
+        Exit Sub
+    End If
+    
+    ' Get the ChartID for this person's natal chart
+    Dim chartID As Long
+    chartID = GetNatalChartID(m_PersonID)
+    
+    If chartID = 0 Then
+        MsgBox "Unable to find natal chart in database. Please regenerate the chart.", vbExclamation, "Chart Not Found"
+        Exit Sub
+    End If
+    
+    ' Open the aspect grid with the natal chart
+    DoCmd.OpenForm "frmAspectHalfGrid", acNormal, , , , , CStr(chartID)
+    
+    Exit Sub
+    
+ErrorHandler:
+    MsgBox "Error opening natal chart view: " & Err.Description, vbExclamation, "Error"
+End Sub
+
+
+'Private Function GetNatalChartID(PersonID As Long) As Long
+'    Dim db As DAO.Database
+'    Dim rs As DAO.Recordset
+'    Dim sql As String
+'
+'    On Error GoTo ErrorHandler
+'
+'    Set db = CurrentDb()
+'    sql = "SELECT ChartID FROM tblCharts WHERE PersonID = " & PersonID & " AND ChartType = 'Natal'"
+'    Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
+'
+'    If Not rs.EOF Then
+'        GetNatalChartID = rs!chartID
+'    Else
+'        GetNatalChartID = 0
+'    End If
+'
+'    rs.Close
+'    Set rs = Nothing
+'    Set db = Nothing
+'    Exit Function
+'
+'ErrorHandler:
+'    GetNatalChartID = 0
+'    If Not rs Is Nothing Then
+'        On Error Resume Next
+'        rs.Close
+'        Set rs = Nothing
+'    End If
+'    Set db = Nothing
+'End Function
+

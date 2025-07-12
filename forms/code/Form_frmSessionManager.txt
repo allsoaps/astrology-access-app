@@ -1,0 +1,1913 @@
+VERSION 1.0 CLASS
+BEGIN
+  MultiUse = -1  'True
+END
+Attribute VB_Name = "Form_frmSessionManager"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = True
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Option Compare Database
+Option Explicit
+
+' --- Form-level variables for the Unbound method ---
+Private m_PersonID As Long
+Private m_EventID As Long
+Private m_SessionID As Long
+
+' These variables will now track our state manually
+Private m_CurrentSessionID As Long
+Private m_CurrentSessionNumber As Long
+Private m_TotalSessionCount As Long
+
+Private Type ToleranceRule
+    score As Double
+    colorName As String
+    RGBValue As Long
+End Type
+
+Private m_Tolerances() As ToleranceRule
+Private m_ToleranceCount As Integer
+
+'***********
+' Swiss Ephemeris declarations
+' Constants for planets and calculation flags
+Private Const SE_SUN As Long = 0
+Private Const SE_MOON As Long = 1
+Private Const SE_MERCURY As Long = 2
+Private Const SE_VENUS As Long = 3
+Private Const SE_MARS As Long = 4
+Private Const SE_JUPITER As Long = 5
+Private Const SE_SATURN As Long = 6
+Private Const SE_URANUS As Long = 7
+Private Const SE_NEPTUNE As Long = 8
+Private Const SE_PLUTO As Long = 9
+
+' Calculation flags
+Private Const SEFLG_SPEED As Long = 256 ' Return speed values
+Private Const SEFLG_SWIEPH As Long = 2 ' Use Swiss Ephemeris
+
+' Swiss Ephemeris DLL declarations
+#If VBA7 Then
+    #If Win64 Then
+        ' 64-bit declarations
+        Private Declare PtrSafe Function swe_calc_ut Lib "swedll64.dll" ( _
+            ByVal tjd_ut As Double, _
+            ByVal ipl As Long, _
+            ByVal iflag As Long, _
+            ByRef xx As Double, _
+            ByRef serr As String) As Long
+            
+        Private Declare PtrSafe Function swe_set_ephe_path Lib "swedll64.dll" ( _
+            ByVal path As String) As Long
+            
+        Private Declare PtrSafe Function swe_close Lib "swedll64.dll" () As Long
+        
+        Private Declare PtrSafe Function swe_houses Lib "swedll64.dll" ( _
+            ByVal tjd_ut As Double, _
+            ByVal geolat As Double, _
+            ByVal geolon As Double, _
+            ByVal hsys As Long, _
+            ByRef cusps As Double, _
+            ByRef ascmc As Double) As Long
+    #Else
+        ' 32-bit declarations with PtrSafe (VBA7 but not 64-bit)
+        Private Declare PtrSafe Function swe_calc_ut Lib "swedll32.dll" ( _
+            ByVal tjd_ut As Double, _
+            ByVal ipl As Long, _
+            ByVal iflag As Long, _
+            ByRef xx As Double, _
+            ByRef serr As String) As Long
+            
+        Private Declare PtrSafe Function swe_set_ephe_path Lib "swedll32.dll" ( _
+            ByVal path As String) As Long
+            
+        Private Declare PtrSafe Function swe_close Lib "swedll32.dll" () As Long
+        
+        Private Declare PtrSafe Function swe_houses Lib "swedll32.dll" ( _
+            ByVal tjd_ut As Double, _
+            ByVal geolat As Double, _
+            ByVal geolon As Double, _
+            ByVal hsys As Long, _
+            ByRef cusps As Double, _
+            ByRef ascmc As Double) As Long
+    #End If
+#Else
+    ' 32-bit declarations (pre-VBA7)
+    'Private Declare Function swe_calc_ut Lib "swedll32.dll" ( _
+    '   ByVal tjd_ut As Double, _
+    '   ByVal ipl As Long, _
+    '   ByVal iflag As Long, _
+    '   ByRef xx As Double, _
+    '   ByRef serr As String) As Long
+        
+   'Private Declare Function swe_set_ephe_path Lib "swedll32.dll" ( _
+   '    ByVal path As String) As Long
+        
+   'Private Declare Function swe_close Lib "swedll32.dll" () As Long
+    
+   'Private Declare Function swe_houses Lib "swedll32.dll" ( _
+   '    ByVal tjd_ut As Double, _
+   '    ByVal geolat As Double, _
+   '    ByVal geolon As Double, _
+   '    ByVal hsys As Long, _
+   '    ByRef cusps As Double, _
+   '    ByRef ascmc As Double) As Long
+#End If
+
+
+
+'================'
+'  FORM EVENTS   '
+'================'
+
+Private Sub Form_Load()
+    InitializeForm
+    UpdateFormButtons
+    LoadToleranceRules
+
+End Sub
+
+'===================='
+'  CONTROL EVENTS    '
+'===================='
+
+Private Sub cboSelectViewer_AfterUpdate()
+    If Not IsNull(Me.cboSelectViewer.value) Then
+        m_PersonID = Me.cboSelectViewer.value
+        LoadFirstSession
+    End If
+End Sub
+
+Private Sub cboSelectEvent_AfterUpdate()
+    If Not IsNull(Me.cboSelectEvent.value) Then
+        m_EventID = Me.cboSelectEvent.value
+        LoadFirstSession
+    End If
+End Sub
+
+Private Sub txtStartTime_AfterUpdate()
+    CalculateElapsedTime
+End Sub
+
+Private Sub txtEndTime_AfterUpdate()
+    CalculateElapsedTime
+End Sub
+
+
+Private Sub chkUseBirthLocation_AfterUpdate()
+    ' This event handles the "Use Viewer Birth Location" checkbox logic
+    On Error GoTo Err_Checkbox
+    
+    If Me.chkUseBirthLocation.value = True Then
+        ' --- User CHECKED the box ---
+        
+        If m_PersonID = 0 Then
+            MsgBox "Please select a Viewer first.", vbInformation
+            Me.chkUseBirthLocation.value = False ' Uncheck the box
+            Exit Sub
+        End If
+        
+        Dim birthLocationID As Long
+        birthLocationID = Nz(DLookup("LocationID", "tblPeople", "PersonID = " & m_PersonID), 0)
+        
+        If birthLocationID = 0 Then
+            MsgBox "No birth location is on file for this viewer.", vbInformation, "Location Not Found"
+            Me.chkUseBirthLocation.value = False ' Uncheck the box
+        Else
+            Dim rs As DAO.Recordset
+            Set rs = CurrentDb.OpenRecordset("SELECT * FROM tblLocations WHERE LocationID = " & birthLocationID)
+            
+            If Not rs.EOF Then
+                Me.txtCity.value = ProperCase(rs!City)
+                Me.txtStateProv.value = Nz(UCase(rs!StateProvince), "")
+                Me.cboCountry.value = rs!Country
+                Me.txtLatitude.value = rs!latitude
+                Me.txtLongitude.value = rs!longitude
+                SetLocationControlsLocked True ' Lock the controls
+            End If
+            rs.Close
+            Set rs = Nothing
+        End If
+
+    Else
+        ' --- User UNCHECKED the box ---
+        ' Unlock the controls for manual entry, leaving data as a starting point.
+        SetLocationControlsLocked False
+    End If
+    
+    Exit Sub
+
+Err_Checkbox:
+    If Not rs Is Nothing Then
+        rs.Close
+        Set rs = Nothing
+    End If
+    
+    MsgBox "An error occurred: " & Err.Description, vbCritical
+    
+    Me.chkUseBirthLocation.value = False
+End Sub
+
+Private Sub txtCity_AfterUpdate()
+    HandleManualLocationChange
+End Sub
+
+Private Sub txtStateProv_AfterUpdate()
+    HandleManualLocationChange
+End Sub
+
+Private Sub cboCountry_AfterUpdate()
+    HandleManualLocationChange
+End Sub
+
+'=================================='
+'  CORE LOGIC & HELPER SUBS        '
+'=================================='
+
+Public Sub InitializeForm()
+    On Error GoTo Err_Init
+    
+    Dim strOpenArgs As String
+    strOpenArgs = Nz(Me.openArgs, "")
+    
+    ClearSessionDetails
+    
+    Me.cboSelectViewer.Visible = True
+    Me.cboSelectEvent.Visible = True
+    
+    If strOpenArgs = "" Then
+        PopulateAllViewers
+        PopulateAllEvents
+    Else
+        Dim args() As String
+        Dim key As String
+        Dim value As Long
+        
+        args = Split(strOpenArgs, "=")
+        key = args(0)
+        value = CLng(args(1))
+        
+        Select Case key
+            Case "PersonID"
+                SetupForViewer value
+            Case "EventID"
+                SetupForEvent value
+        End Select
+    End If
+    Exit Sub
+
+Err_Init:
+    MsgBox "A critical error occurred while initializing the Session Manager: " & Err.Description, vbCritical, "Load Error"
+End Sub
+
+Private Sub LoadFirstSession()
+    If m_PersonID = 0 Or m_EventID = 0 Then Exit Sub
+    
+    m_TotalSessionCount = DCount("*", "tblSessions", "PersonID=" & m_PersonID & " AND EventID=" & m_EventID & " AND SessionNumber=1 AND (DateDeleted IS NULL OR DateDeleted = #1/1/1900#)")
+    
+    If m_TotalSessionCount > 0 Then
+        Dim firstSessionID As Long
+        firstSessionID = DLookup("SessionID", "tblSessions", "PersonID=" & m_PersonID & " AND EventID=" & m_EventID & " AND SessionNumber=1 AND (DateDeleted IS NULL OR DateDeleted = #1/1/1900#)")
+
+        m_SessionID = firstSessionID
+        Me.txtSessionNum.value = firstSessionID
+        
+        LoadSessionByID firstSessionID
+    Else
+        ClearSessionDetails
+        Me.txtSessionNum.value = 1
+        Me.txtSessionDate.value = Date
+    End If
+    
+    UpdateChartControls
+    
+End Sub
+
+Private Sub LoadSessionByID(ByVal sessionID_ToLoad As Long)
+    On Error GoTo Err_LoadByID
+    
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    Dim sql As String
+    
+    Set db = CurrentDb()
+    sql = "SELECT s.*, l.City, l.StateProvince, l.Country, l.Latitude, l.Longitude " & _
+          "FROM tblSessions AS s LEFT JOIN tblLocations AS l ON s.LocationID = l.LocationID " & _
+          "WHERE s.SessionID = " & sessionID_ToLoad
+          
+    Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
+    
+    If Not rs.EOF Then
+        PopulateControlsFromRecordset rs
+    Else
+        ClearSessionDetails
+    End If
+    
+    rs.Close
+    Set rs = Nothing
+    Set db = Nothing
+    
+    Exit Sub
+
+Err_LoadByID:
+    MsgBox "Error loading session data: " & Err.Description, vbCritical
+
+    If Not rs Is Nothing Then
+        rs.Close
+        Set rs = Nothing
+    End If
+    Set db = Nothing
+    
+    ClearSessionDetails
+End Sub
+
+Private Sub PopulateControlsFromRecordset(rs As DAO.Recordset)
+    On Error GoTo Err_PopControls
+    
+    m_CurrentSessionID = rs!SessionID
+    m_CurrentSessionNumber = rs!SessionNumber
+    
+    Me.txtSessionID.value = rs!SessionID
+    Me.txtSessionNum.value = rs!SessionNumber
+    Me.txtSessionDate.value = rs!sessionDate
+    Me.txtStartTime.value = rs!SessionStartTime
+    Me.txtEndTime.value = rs!SessionEndTime
+    Me.txtElapsedTime.value = rs!SessionDuration
+    Me.cboTargetShape.value = rs!TargetShape
+    Me.cboSignal.value = rs!Signal
+    Me.chkCorrectGeometry.value = Nz(rs!CorrectGeometry, False)
+    Me.chkSessionChartGenerated.value = Nz(rs!SessionChartGenerated, False)
+
+    Me.txtCity = Nz(rs!City, "")
+    Me.txtStateProv.value = Nz(UCase(rs!StateProvince), "")
+    Me.cboCountry.value = rs!Country
+    Me.txtLatitude.value = Nz(rs!latitude, 0)
+    Me.txtLongitude.value = Nz(rs!longitude, 0)
+    
+    Me.chkUseBirthLocation.value = Nz(rs!UsedBirthLocation, False)
+    SetLocationControlsLocked False
+
+    ' Calculate average success for this session
+    CalculateSessionAverageSuccess rs!SessionID
+    
+    Exit Sub
+    
+Err_PopControls:
+    MsgBox "Error populating session controls: " & Err.Description, vbCritical, "Load Error"
+End Sub
+
+' Separate function to calculate and display average success
+Private Sub CalculateSessionAverageSuccess(SessionID As Long)
+    On Error GoTo Err_CalcAvg
+    
+    Dim db As DAO.Database
+    Dim rst As DAO.Recordset  ' <-- FIXED: Correct type declaration
+    Dim sql As String
+    
+    Set db = CurrentDb()
+    
+    sql = "SELECT AVG(Success) AS SuccessAverage FROM tblImpressions " & _
+          "WHERE SessionID = " & SessionID & " " & _
+          "AND (DateDeleted IS NULL OR DateDeleted = #1/1/1900#)"
+    
+    Set rst = db.OpenRecordset(sql, dbOpenSnapshot)
+    
+    If Not rst.EOF Then
+        ' Check if we got a result (could be Null if no impressions exist)
+        If IsNull(rst!SuccessAverage) Then
+            Me.txtAvgSuccess.value = Null
+        Else
+            ' Format to 2 decimal places
+            Me.txtAvgSuccess.value = Format(rst!SuccessAverage, "0.00")
+        End If
+    Else
+        Me.txtAvgSuccess.value = Null
+    End If
+    
+    rst.Close
+    Set rst = Nothing
+    Set db = Nothing
+    
+    ApplySuccessColorCoding
+    
+    Exit Sub
+    
+Err_CalcAvg:
+    ' Set to null on error and clean up
+    Me.txtAvgSuccess.value = Null
+    
+    If Not rst Is Nothing Then
+        On Error Resume Next
+        rst.Close
+        Set rst = Nothing
+        On Error GoTo 0
+    End If
+    Set db = Nothing
+    
+    Debug.Print "Error calculating average success: " & Err.Description
+End Sub
+
+
+Private Sub ClearSessionDetails()
+    m_CurrentSessionID = 0
+    m_CurrentSessionNumber = 0
+    Me.txtSessionID.value = Null
+    Me.txtSessionNum.value = Null
+    Me.txtSessionDate.value = Null
+    Me.txtStartTime.value = Null
+    Me.txtEndTime.value = Null
+    Me.txtElapsedTime.value = Null
+    Me.txtAvgSuccess.value = Null
+    Me.cboTargetShape.value = Null
+    Me.cboSignal.value = Null
+    Me.chkCorrectGeometry.value = False
+    Me.chkSessionChartGenerated = False
+    
+    Me.txtCity.value = Null
+    Me.txtStateProv.value = Null
+    Me.cboCountry.value = Null
+    Me.txtLatitude.value = Null
+    Me.txtLongitude.value = Null
+    Me.chkUseBirthLocation.value = False
+    SetLocationControlsLocked False
+    
+     ApplySuccessColorCoding
+End Sub
+
+Private Sub SetLocationControlsLocked(IsLocked As Boolean)
+    Me.txtCity.Locked = IsLocked
+    Me.txtStateProv.Locked = IsLocked
+    Me.cboCountry.Locked = IsLocked
+    
+    Dim backColor As Long
+    If IsLocked Then
+        backColor = RGB(240, 240, 240) ' A light grey
+    Else
+        backColor = vbWhite
+    End If
+    Me.txtCity.backColor = backColor
+    Me.txtStateProv.backColor = backColor
+    Me.cboCountry.backColor = backColor
+End Sub
+
+Private Sub CalculateElapsedTime()
+    On Error Resume Next
+    If IsDate(Me.txtStartTime.value) And IsDate(Me.txtEndTime.value) Then
+        If CDate(Me.txtEndTime.value) > CDate(Me.txtStartTime.value) Then
+            Me.txtElapsedTime.value = DateDiff("n", Me.txtStartTime.value, Me.txtEndTime.value)
+        Else
+            Me.txtElapsedTime.value = Null
+        End If
+    Else
+        Me.txtElapsedTime.value = Null
+    End If
+End Sub
+
+Private Sub HandleManualLocationChange()
+    ' This is called when the user manually changes a location field.
+    On Error GoTo Err_HandleLoc
+    
+    ' Only proceed if the required fields are filled
+    If IsNull(Me.txtCity.value) Or IsNull(Me.cboCountry.value) Then Exit Sub
+    If Trim(Me.txtCity.value) = "" Or Trim(Me.cboCountry.value) = "" Then Exit Sub
+    
+    Dim criteria As String
+    criteria = "City = '" & Replace(Me.txtCity.value, "'", "''") & "' AND " & _
+               "Country = '" & Replace(Me.cboCountry.value, "'", "''") & "'"
+    
+    Dim stateValue As String
+    stateValue = Nz(Me.txtStateProv.value, "")
+    If stateValue <> "" Then
+        criteria = criteria & " AND StateProvince = '" & Replace(stateValue, "'", "''") & "'"
+    End If
+    
+    If Nz(DLookup("LocationID", "tblLocations", criteria), 0) = 0 Then
+        ' This location does NOT exist. Create it now.
+        Dim db As DAO.Database
+        Set db = CurrentDb()
+        db.Execute "INSERT INTO tblLocations (City, StateProvince, Country, Latitude, Longitude, DateCreated, DateUpdated) " & _
+                   "VALUES ('" & Replace(ProperCase(Me.txtCity.value), "'", "''") & "', '" & Replace(UCase(stateValue), "'", "''") & "', '" & Replace(Me.cboCountry.value, "'", "''") & "', 0, 0, Now(), Now());"
+        
+        ' Clear the Lat/Long and prompt the user
+        Me.txtLatitude.value = Null
+        Me.txtLongitude.value = Null
+        MsgBox "New location has been created. Please use 'Get Coordinates' to fetch the geographic data.", vbInformation
+        
+        Set db = Nothing
+    End If
+
+    Exit Sub
+Err_HandleLoc:
+    MsgBox "An error occurred while checking the location: " & Err.Description
+End Sub
+
+Private Sub SetupForViewer(ByVal PersonID As Long)
+    m_PersonID = PersonID
+    Me.txtViewerName.value = DLookup("FirstName & ', ' & LastName", "tblPeople", "PersonID = " & m_PersonID)
+    Me.cboSelectViewer.Enabled = False
+    Me.cboSelectViewer.Visible = False
+    Me.txtViewerName.Enabled = True
+    
+    Dim sql As String
+    sql = "SELECT E.EventID, E.EventName & ' (' & Format(E.EventDate, 'yyyy-mm-dd') & ')' AS EventDisplay FROM tblEvents AS E INNER JOIN tblAssignments AS A ON E.EventID = A.EventID WHERE A.PersonID = " & m_PersonID & " ORDER BY E.EventDate DESC;"
+    Me.cboSelectEvent.RowSource = sql
+    
+    If Me.cboSelectEvent.ListCount = 0 Then
+        If MsgBox("This viewer has no events assigned." & vbCrLf & vbCrLf & "Would you like to assign events now?", vbQuestion + vbYesNo, "No Events Found") = vbYes Then
+            DoCmd.OpenForm "frmAssignEventsToViewer", , , , , acDialog, CStr(m_PersonID)
+            Me.cboSelectEvent.Requery
+        Else
+            DoCmd.Close acForm, Me.name
+            Exit Sub
+        End If
+    End If
+End Sub
+
+Private Sub SetupForEvent(ByVal EventID As Long)
+    m_EventID = EventID
+    Me.txtEventName.value = DLookup("EventName", "tblEvents", "EventID = " & m_EventID)
+    Me.cboSelectEvent.Enabled = False
+    Me.cboSelectEvent.Visible = False
+    Me.txtEventName.Enabled = True
+    
+    Dim sql As String
+    sql = "SELECT P.PersonID, P.LastName & ' ' & P.FirstName AS ViewerDisplay FROM tblPeople AS P INNER JOIN tblAssignments AS A ON P.PersonID = A.PersonID WHERE A.EventID = " & m_EventID & " ORDER BY P.LastName, P.FirstName;"
+    
+    Me.cboSelectViewer.RowSource = sql
+    
+    If Me.cboSelectViewer.ListCount = 0 Then
+        If MsgBox("This event has no viewers assigned." & vbCrLf & vbCrLf & "Would you like to assign viewers now?", vbQuestion + vbYesNo, "No Viewers Found") = vbYes Then
+            Dim openArgs As String
+            openArgs = CStr(m_EventID) & "|" & Me.txtEventName.value
+            DoCmd.OpenForm "frmViewerAssignList", , , , , acDialog, openArgs
+            Me.cboSelectViewer.Requery
+        Else
+            DoCmd.Close acForm, Me.name
+            Exit Sub
+        End If
+    End If
+
+End Sub
+
+Private Sub PopulateAllViewers()
+    Me.cboSelectViewer.RowSource = "SELECT PersonID, LastName, FirstName FROM tblPeople ORDER BY LastName, FirstName;"
+End Sub
+
+Private Sub PopulateAllEvents()
+    Me.cboSelectEvent.RowSource = "SELECT EventID, EventName FROM tblEvents ORDER BY EventDate DESC;"
+End Sub
+
+Private Function IsOpen(ByVal formName As String) As Boolean
+    On Error Resume Next
+    IsOpen = (Forms(formName).name = formName)
+    On Error GoTo 0
+End Function
+
+
+Private Function GetOrCreateSessionLocationID() As Long
+    ' This helper handles the session location logic before saving
+    On Error GoTo Err_GetLoc
+    
+    Dim LocationID As Long
+    
+    If Me.chkUseBirthLocation.value = True Then
+        ' If checkbox is checked, the location is the viewer's birth location
+        LocationID = Nz(DLookup("LocationID", "tblPeople", "PersonID = " & m_PersonID), 0)
+    Else
+        ' Checkbox is not checked, so use the values from the form fields
+        If IsNull(Me.txtCity.value) Or IsNull(Me.cboCountry.value) Then
+            MsgBox "A Session Location (City and Country) is required.", vbExclamation
+            Exit Function ' Returns 0
+        End If
+        
+        Dim criteria As String
+        criteria = "City = '" & Replace(Me.txtCity.value, "'", "''") & "' AND " & _
+                   "Country = '" & Replace(Me.cboCountry.value, "'", "''") & "'"
+              
+        Dim stateValue As String
+        stateValue = Nz(Me.txtStateProv.value, "")
+        If stateValue <> "" Then
+            criteria = criteria & " AND StateProvince = '" & Replace(stateValue, "'", "''") & "'"
+        End If
+        
+        LocationID = Nz(DLookup("LocationID", "tblLocations", criteria), 0)
+        
+    End If
+    
+    GetOrCreateSessionLocationID = LocationID
+    Exit Function
+    
+Err_GetLoc:
+    MsgBox "Error getting session location: " & Err.Description
+    GetOrCreateSessionLocationID = 0 ' Return 0 on error
+End Function
+
+
+Private Sub UpdateLocationCoordinatesInDB(ByVal strCity As String, ByVal strState As String, ByVal strCountry As String, ByVal dblLat As Double, ByVal dblLng As Double)
+    On Error GoTo Err_UpdateCoords
+    
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    Dim strSQL As String
+    Dim criteria As String
+    Dim LocationID As Long
+    
+    Set db = CurrentDb()
+    
+    ' Build the criteria to find the location record
+    criteria = "City = '" & Replace(strCity, "'", "''") & "' AND " & _
+               "Country = '" & Replace(strCountry, "'", "''") & "'"
+    
+    If Trim(strState) <> "" Then
+        criteria = criteria & " AND StateProvince = '" & Replace(strState, "'", "''") & "'"
+    Else
+        criteria = criteria & " AND (StateProvince IS NULL OR StateProvince = '')"
+    End If
+    
+    ' First check if location exists
+    LocationID = Nz(DLookup("LocationID", "tblLocations", criteria), 0)
+    
+    If LocationID = 0 Then
+        ' Location doesn't exist - create it with coordinates
+        strSQL = "SELECT * FROM tblLocations WHERE 1=0" ' Empty recordset for adding new record
+        Set rs = db.OpenRecordset(strSQL, dbOpenDynaset)
+        
+        rs.AddNew
+        rs!City = strCity
+        rs!StateProvince = IIf(strState = "", Null, strState)
+        rs!Country = strCountry
+        rs!latitude = dblLat
+        rs!longitude = dblLng
+        rs!DateCreated = Now()
+        rs!DateUpdated = Now()
+        rs.Update
+                
+    Else
+        ' Location exists - update it with coordinates
+        strSQL = "SELECT * FROM tblLocations WHERE LocationID = " & LocationID
+        Set rs = db.OpenRecordset(strSQL, dbOpenDynaset)
+        
+        If Not rs.EOF Then
+            rs.Edit
+            rs!latitude = dblLat
+            rs!longitude = dblLng
+            rs!DateUpdated = Now()
+            rs.Update
+            
+        End If
+    End If
+    
+    rs.Close
+    Set rs = Nothing
+    Set db = Nothing
+    Exit Sub
+    
+Err_UpdateCoords:
+    If Not rs Is Nothing Then
+        On Error Resume Next
+        rs.Close
+        Set rs = Nothing
+    End If
+    Set db = Nothing
+    
+    MsgBox "Error updating coordinates in database: " & Err.Description, vbCritical, "Database Error"
+End Sub
+
+' check if a session has impressions
+Private Function hasImpressions(SessionID As Long) As Boolean
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    Dim strSQL As String
+    
+    On Error GoTo ErrorHandler
+    
+    Set db = CurrentDb()
+    strSQL = "SELECT COUNT(*) AS ImpressionCount FROM tblImpressions " & _
+             "WHERE SessionID = " & SessionID & " " & _
+             "AND (DateDeleted IS NULL OR DateDeleted = #1/1/1900#)"
+    
+    Set rs = db.OpenRecordset(strSQL, dbOpenSnapshot)
+    
+    If Not rs.EOF Then
+        hasImpressions = (rs!ImpressionCount > 0)
+    End If
+    
+    rs.Close
+    Set rs = Nothing
+    Set db = Nothing
+    
+    Exit Function
+    
+ErrorHandler:
+    hasImpressions = False
+    If Not rs Is Nothing Then
+        rs.Close
+        Set rs = Nothing
+    End If
+    Set db = Nothing
+End Function
+
+' Optional: Method to get impression count for display
+Private Function GetImpressionCount(SessionID As Long) As Long
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    Dim strSQL As String
+    
+    On Error GoTo ErrorHandler
+    
+    Set db = CurrentDb()
+    strSQL = "SELECT COUNT(*) AS ImpressionCount FROM tblImpressions " & _
+             "WHERE SessionID = " & SessionID & " " & _
+             "AND (DateDeleted IS NULL OR DateDeleted = #1/1/1900#)"
+    
+    Set rs = db.OpenRecordset(strSQL, dbOpenSnapshot)
+    
+    If Not rs.EOF Then
+        GetImpressionCount = rs!ImpressionCount
+    End If
+    
+    rs.Close
+    Set rs = Nothing
+    Set db = Nothing
+    
+    Exit Function
+    
+ErrorHandler:
+    GetImpressionCount = 0
+    If Not rs Is Nothing Then
+        rs.Close
+        Set rs = Nothing
+    End If
+    Set db = Nothing
+End Function
+
+
+Private Sub btnGetCoordinates_Click()
+    ' Get coordinates using LocationIQ API for session location
+    Dim latLngResult As String
+    Dim lat As Double, lng As Double
+    Dim strAddress As String
+    Dim strCity As String
+    Dim strStateProv As String
+    Dim strCountry As String
+
+    ' Get values from form controls
+    strCity = ProperCase(Nz(Me.txtCity, ""))
+    strStateProv = UCase(Nz(Me.txtStateProv, ""))
+    strCountry = Nz(Me.cboCountry, "")
+
+    ' Build location string
+    Dim locationStr As String
+    locationStr = Trim(Nz(Me.txtCity, ""))
+    If Trim(Nz(Me.txtStateProv, "")) <> "" Then
+        locationStr = locationStr & ", " & Trim(Me.txtStateProv)
+    End If
+    If Trim(Nz(Me.cboCountry, "")) <> "" Then
+        locationStr = locationStr & ", " & Trim(Me.cboCountry)
+    End If
+    
+    If locationStr = "" Then
+        MsgBox "Please enter at least a city name", vbExclamation
+        Exit Sub
+    End If
+    
+    If Trim(strStateProv) = "" Then
+        strAddress = Trim(strCity) & ", " & Trim(strCountry)
+    Else
+        strAddress = Trim(strCity) & ", " & Trim(strStateProv) & ", " & Trim(strCountry)
+    End If
+    
+    ' Call LocationIQ API
+    latLngResult = GetLatLong_LocationIQ(strAddress)
+    
+    If Left(latLngResult, 5) = "Lat: " Then
+        ' Parse the result
+        lat = val(Mid(latLngResult, 6, InStr(latLngResult, ", Lng:") - 6))
+        lng = val(Mid(latLngResult, InStr(latLngResult, ", Lng:") + 7))
+        
+        ' Update the form controls
+        Me.txtLatitude = lat
+        Me.txtLongitude = lng
+        
+        MsgBox "Coordinates retrieved successfully!", vbInformation
+    Else
+        MsgBox "Could not retrieve coordinates: " & latLngResult, vbExclamation
+    End If
+End Sub
+
+Private Sub chkUseViewerBirthLocation_Click()
+    ' When checked, populate session location with student's birth location
+    If Me.chkUseBirthLocation Then
+        CopyStudentLocationToSession
+    Else
+        ' Clear session location fields
+        Me.txtCity = ""
+        Me.txtStateProv = ""
+        Me.cboCountry = ""
+        Me.txtLatitude = 0
+        Me.txtLongitude = 0
+    End If
+End Sub
+
+Private Sub CopyStudentLocationToSession()
+    ' Get student's birth location information
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    Dim sql As String
+    
+    On Error GoTo ErrorHandler
+    'm_PersonID
+'    If Nz(Me.txtPersonID, 0) = 0 Then
+     If Nz(m_PersonID, 0) = 0 Then
+        MsgBox "Please select a student first", vbExclamation
+        Me.chkUseBirthLocation = False
+        Exit Sub
+    End If
+    
+    Set db = CurrentDb()
+    sql = "SELECT l.City, l.[StateProvince], l.Country, l.Latitude, l.Longitude " & _
+          "FROM tblPeople p INNER JOIN tblLocations l ON p.LocationID = l.LocationID " & _
+          "WHERE p.PersonID = " & m_PersonID
+    
+    Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
+    
+    If Not rs.EOF Then
+        Me.txtCity = Nz(rs!City, "")
+        Me.txtStateProv = Nz(rs![StateProvince], "")
+        Me.cboCountry = Nz(rs!Country, "")
+        Me.txtLatitude = Nz(rs!latitude, 0)
+        Me.txtLongitude = Nz(rs!longitude, 0)
+    Else
+        MsgBox "Could not find location information for selected student", vbExclamation
+        Me.chkUseBirthLocation = False
+    End If
+    
+    rs.Close
+    Set rs = Nothing
+    Set db = Nothing
+    Exit Sub
+    
+ErrorHandler:
+    MsgBox "Error retrieving student location: " & Err.Description, vbCritical
+    Me.chkUseBirthLocation = False
+    If Not rs Is Nothing Then
+        rs.Close
+        Set rs = Nothing
+    End If
+    Set db = Nothing
+End Sub
+
+
+' Session Manager Form - View Chart Button Event
+Private Sub btnViewSessionChart_Click()
+    On Error GoTo ErrorHandler
+    
+    ' Get the SessionID for the current session
+    Dim SessionID As Long
+    SessionID = GetCurrentSessionID()
+    
+    If SessionID <= 0 Then
+        MsgBox "Please save the session before viewing the chart.", vbExclamation, "No Session Found"
+        Exit Sub
+    End If
+    
+    ' Find the ChartID for this session
+    Dim chartID As Long
+    chartID = GetSessionChartID(SessionID)
+    
+    If chartID <= 0 Then
+        ' No chart found - offer to generate one
+        Dim response As VbMsgBoxResult
+        response = MsgBox("No chart found for this session." & vbCrLf & _
+                         "Would you like to generate a session chart first?", _
+                         vbYesNo + vbQuestion, "Chart Not Found")
+        
+        If response = vbYes Then
+            ' Generate chart first, then view it
+            Call btnGenerateChart_Click
+            
+            ' Try to get ChartID again after generation
+            chartID = GetSessionChartID(SessionID)
+            
+            If chartID <= 0 Then
+                MsgBox "Chart generation failed. Unable to display chart.", vbCritical, "Chart Generation Error"
+                Exit Sub
+            End If
+        Else
+            Exit Sub
+        End If
+    End If
+    
+    ' Open frmAspectGrid with the ChartID
+    Debug.Print "About to open frmAspectGrid with ChartID: " & chartID
+    
+    ' Make sure ChartID is valid before passing
+'    If chartID > 0 Then
+'        DoCmd.OpenForm "frmAspectGrid", acNormal, , , , , chartID
+    If chartID > 0 Then
+'            Dim openArgs As String
+'            openArgs = chartID & "|" & Me.txtEventName.value
+'            DoCmd.OpenForm "frmAspectHalfGrid", , , , , acDialog, openArgs
+    
+        DoCmd.OpenForm "frmAspectHalfGrid", acNormal, , , , , chartID
+    Else
+        MsgBox "Invalid ChartID (" & chartID & "). Cannot open chart display.", vbCritical, "Invalid Chart"
+    End If
+    
+    Exit Sub
+    
+ErrorHandler:
+    MsgBox "Error opening chart display: " & Err.Number & " - " & Err.Description, vbCritical, "View Chart Error"
+    Debug.Print "ERROR in btnViewChart_Click: " & Err.Number & " - " & Err.Description
+End Sub
+
+' Function to get the current SessionID
+Private Function GetCurrentSessionID() As Long
+    On Error GoTo ErrorHandler
+    
+    GetCurrentSessionID = 0
+    
+    ' If txtSessionNumber has a value, try to find the SessionID
+    If Not IsNull(Me.txtSessionNum) And Me.txtSessionNum <> "" Then
+        Dim db As DAO.Database
+        Dim rs As DAO.Recordset
+        Dim sql As String
+        
+        Set db = CurrentDb()
+        
+        ' Look for session with current viewer + event + session number
+        sql = "SELECT SessionID FROM tblSessions " & _
+              "WHERE PersonID = " & m_PersonID & _
+              " AND EventID = " & m_EventID
+        
+        ' Add session number if available
+        If IsNumeric(Me.txtSessionNum) Then
+            sql = sql & " AND SessionNumber = " & Me.txtSessionNum
+        End If
+        
+        Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
+        
+        If Not rs.EOF Then
+            GetCurrentSessionID = rs!SessionID
+        End If
+        
+        rs.Close
+        Set rs = Nothing
+        Set db = Nothing
+   
+    End If
+    
+    Exit Function
+    
+ErrorHandler:
+    Debug.Print "Error in GetCurrentSessionID: " & Err.Description
+    GetCurrentSessionID = 0
+End Function
+
+' Function to find the ChartID for a given SessionID
+Private Function GetSessionChartID(SessionID As Long) As Long
+    On Error GoTo ErrorHandler
+    
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    Dim sql As String
+    
+    Set db = CurrentDb()
+    
+    ' Look for session chart
+    sql = "SELECT ChartID FROM tblCharts " & _
+          "WHERE SessionID = " & SessionID & " AND ChartType = 'Session'"
+    
+    Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
+    
+    If Not rs.EOF Then
+        GetSessionChartID = rs!chartID
+    Else
+        GetSessionChartID = 0
+    End If
+    
+    rs.Close
+    Set rs = Nothing
+    Set db = Nothing
+    
+    Exit Function
+    
+ErrorHandler:
+    Debug.Print "Error in GetSessionChartID: " & Err.Description
+    GetSessionChartID = 0
+End Function
+
+Private Sub btnSaveSession_Click()
+    If SaveSessionRecord() Then
+        MsgBox "Session record saved successfully!", vbInformation
+    End If
+End Sub
+
+Private Sub btnAddEditImpressions_Click()
+    ' Check if session is saved
+    If Me.NewRecord Or Nz(Me.txtSessionID, 0) = 0 Then
+        MsgBox "Please save the session first before adding impressions.", vbInformation
+        Exit Sub
+    End If
+    
+    DoCmd.OpenForm "frmImpressions", , , , , , CStr(m_CurrentSessionID)
+    
+End Sub
+
+Private Sub btnDeleteSession_Click()
+    If Me.NewRecord Then Exit Sub
+    
+    Dim sessionDeleted As Boolean
+    
+    If MsgBox("Are you sure you want to delete this session and all its impressions?", vbYesNo + vbCritical + vbDefaultButton2) = vbYes Then
+    sessionDeleted = DeleteSessionRecord(m_SessionID)
+    
+        If sessionDeleted Then
+            DoCmd.Close acForm, Me.name
+        End If
+    End If
+End Sub
+
+Private Sub btnClose_Click()
+    If Me.Dirty Then
+        If MsgBox("Save changes before closing?", vbYesNoCancel + vbQuestion) = vbYes Then
+            If Not SaveSessionRecord() Then
+                Exit Sub
+            End If
+        ElseIf vbCancel Then
+            Exit Sub
+        End If
+    End If
+    DoCmd.Close acForm, Me.name
+End Sub
+
+'===========================================================
+' START OF FUNCTION: SaveSessionRecord
+'===========================================================
+
+Private Function SaveSessionRecord() As Boolean
+    Dim db As DAO.Database
+    Dim LocationID As Long
+    Dim sql As String
+    
+    On Error GoTo ErrorHandler
+        
+    ' Validate required fields
+    If Nz(m_PersonID, 0) = 0 Then
+        MsgBox "Please select a student", vbExclamation
+        SaveSessionRecord = False
+        Exit Function
+    End If
+    
+    If Nz(m_EventID, 0) = 0 Then
+        MsgBox "Please select an event", vbExclamation
+        SaveSessionRecord = False
+        Exit Function
+    End If
+    
+    If IsNull(Me.txtSessionDate) Then
+        MsgBox "Session date is required", vbExclamation
+        Me.txtSessionDate.SetFocus
+        SaveSessionRecord = False
+        Exit Function
+    End If
+    
+    If IsNull(Me.txtStartTime) Then
+        MsgBox "Session start time is required", vbExclamation
+        Me.txtStartTime.SetFocus
+        SaveSessionRecord = False
+        Exit Function
+    End If
+    
+    If IsNull(Me.txtEndTime) Then
+        MsgBox "Session end time is required", vbExclamation
+        Me.txtEndTime.SetFocus
+        SaveSessionRecord = False
+        Exit Function
+    End If
+    
+    ' Validate location information
+    If Trim(Nz(Me.txtCity, "")) = "" Or Trim(Nz(Me.cboCountry, "")) = "" Then
+        MsgBox "Session location (city and country) is required", vbExclamation
+        SaveSessionRecord = False
+        Exit Function
+    End If
+    
+    ' Validate coordinates
+    If Nz(Me.txtLatitude, 0) = 0 Or Nz(Me.txtLongitude, 0) = 0 Then
+        MsgBox "Please get coordinates for session location before saving", vbExclamation
+        SaveSessionRecord = False
+        Exit Function
+    End If
+    
+    ' Get or create location
+    LocationID = GetOrCreateSessionLocation(Trim(Me.txtCity), Trim(Nz(Me.txtStateProv, "")), Trim(Me.cboCountry), Me.txtLatitude, Me.txtLongitude)
+    
+    If LocationID = 0 Then
+        MsgBox "Failed to create location record", vbCritical
+        SaveSessionRecord = False
+        Exit Function
+    End If
+    
+    Dim ws As DAO.Workspace
+    Dim rsSession As DAO.Recordset
+    Dim strSQL As String
+    
+    ' Get workspace and database
+    Set ws = DBEngine.Workspaces(0)
+    Set db = CurrentDb()
+    
+    ws.BeginTrans
+    
+    Dim existingID As Long
+    existingID = FindSessionID( _
+                   Nz(m_PersonID, ""), _
+                   Nz(m_EventID, "") _
+                 )
+
+    '— 1) Duplicate check —
+    If existingID > 0 Then
+            
+        sql = "SELECT * FROM tblSessions WHERE SessionID = " & existingID
+        Set rsSession = db.OpenRecordset(sql, dbOpenDynaset)
+        
+        rsSession.Edit
+                  
+          rsSession!PersonID = m_PersonID
+          rsSession!EventID = m_EventID
+          rsSession!sessionDate = Me.txtSessionDate
+          rsSession!SessionStartTime = Me.txtStartTime
+          rsSession!SessionEndTime = Me.txtEndTime
+          rsSession!SessionDuration = Me.txtElapsedTime
+          rsSession!SessionChartGenerated = Me.chkSessionChartGenerated
+          rsSession!SessionNumber = Nz(Me.txtSessionNum, 1)
+          rsSession!LocationID = LocationID
+          rsSession!TargetShape = Me.cboTargetShape
+          rsSession!Signal = Me.cboSignal
+          rsSession!CorrectGeometry = Me.chkCorrectGeometry
+          rsSession!UsedBirthLocation = Me.chkUseBirthLocation
+          rsSession!Notes = "New session"
+          rsSession!DateCreated = Now()
+          rsSession!DateUpdated = Now()
+          
+         
+        rsSession.Update
+
+    Else
+        '— 2) No duplicate ? Add the new session —
+        Set rsSession = db.OpenRecordset("tblSessions", dbOpenDynaset)
+
+        rsSession.AddNew
+          rsSession!PersonID = m_PersonID
+          rsSession!EventID = m_EventID
+          rsSession!sessionDate = Me.txtSessionDate
+          rsSession!SessionStartTime = Me.txtStartTime
+          rsSession!SessionEndTime = Me.txtEndTime
+          rsSession!SessionDuration = Me.txtElapsedTime
+          rsSession!SessionChartGenerated = Me.chkSessionChartGenerated
+          rsSession!SessionNumber = Nz(Me.txtSessionNum, 1)
+          rsSession!LocationID = LocationID
+          rsSession!TargetShape = Me.cboTargetShape
+          rsSession!Signal = Me.cboSignal
+          rsSession!CorrectGeometry = Me.chkCorrectGeometry
+          rsSession!UsedBirthLocation = Me.chkUseBirthLocation
+          rsSession!Notes = "New session"
+          rsSession!DateCreated = Now()
+          rsSession!DateUpdated = Now()
+         
+        rsSession.Update
+
+        ' Grab the newly assigned PersonID
+        rsSession.Bookmark = rsSession.LastModified
+        Me.txtSessionID = rsSession!SessionID
+        
+
+Debug.Print "Latest Session ID(new): " & rsSession!SessionID
+
+    End If
+
+    
+    ' Commit the transaction
+    ws.CommitTrans
+    
+    rsSession.Close
+    Set rsSession = Nothing
+    
+    Set db = Nothing
+    Set ws = Nothing
+
+
+    ' Update chart controls after successful save
+    UpdateChartControls
+
+    SaveSessionRecord = True
+    Exit Function
+    
+ErrorHandler:
+    If Not ws Is Nothing Then ws.Rollback
+    If Not rsSession Is Nothing Then
+        rsSession.Close
+        Set rsSession = Nothing
+    End If
+    Set ws = Nothing
+    Set db = Nothing
+    
+    MsgBox "Error saving session record: " & Err.Description, vbCritical
+    SaveSessionRecord = False
+End Function
+
+'===========================================================
+' END OF FUNCTION: SaveSessionRecord
+'===========================================================
+
+Private Function GetOrCreateSessionLocation(City As String, state As String, Country As String, lat As Double, lng As Double) As Long
+    ' Same logic as student form - could be moved to a shared module
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    Dim sql As String
+    
+    On Error GoTo ErrorHandler
+    
+    Set db = CurrentDb()
+    
+    Dim strCity As String
+    Dim strState As String
+    
+    
+    ' First, try to find existing location
+    sql = "SELECT LocationID FROM tblLocations WHERE City = '" & Replace(City, "'", "''") & "'"
+    
+    If state <> "" Then
+        sql = sql & " AND [StateProvince] = '" & Replace(state, "'", "''") & "'"
+    Else
+        sql = sql & " AND ([StateProvince] IS NULL OR [StateProvince] = '')"
+    End If
+    
+    sql = sql & " AND Country = '" & Replace(Country, "'", "''") & "'"
+    
+    Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
+    
+    If Not rs.EOF Then
+        ' Location already exists
+        GetOrCreateSessionLocation = rs!LocationID
+    Else
+        ' Create new location
+        rs.Close
+        Set rs = db.OpenRecordset("tblLocations", dbOpenDynaset)
+        rs.AddNew
+        With rs
+            !City = City
+            If state <> "" Then ![StateProvince] = state
+            !Country = Country
+            !latitude = lat
+            !longitude = lng
+            !DateCreated = Now()
+            !DateUpdated = Now()
+        End With
+        rs.Update
+        GetOrCreateSessionLocation = rs!LocationID
+    End If
+    
+    rs.Close
+    Set rs = Nothing
+    Set db = Nothing
+    Exit Function
+    
+ErrorHandler:
+    GetOrCreateSessionLocation = 0
+    If Not rs Is Nothing Then
+        rs.Close
+        Set rs = Nothing
+    End If
+    Set db = Nothing
+End Function
+
+Private Function DeleteSessionRecord(SessionID As Long) As Boolean
+    Dim db As DAO.Database
+    
+    On Error GoTo ErrorHandler
+    
+    DeleteSessionRecord = False
+    
+    Set db = CurrentDb()
+    db.Execute "UPDATE tblSessions SET DateDeleted = Now() WHERE SessionID = " & SessionID, dbFailOnError
+    
+    DeleteSessionRecord = True
+    Set db = Nothing
+    Exit Function
+    
+ErrorHandler:
+    DeleteSessionRecord = False
+    If Not db Is Nothing Then Set db = Nothing
+    ' Let calling code handle the error message
+End Function
+
+
+Private Function CalculateSessionMoonPhase(sessionDateTime As Date) As String
+    ' Calculate moon phase using Swiss Ephemeris
+    Dim julianDay As Double
+    Dim sunLon As Double, moonLon As Double
+    Dim phase As Double
+    Dim xx(5) As Double
+    Dim serr As String
+    Dim result As Long
+    
+    On Error GoTo ErrorHandler
+    
+    ' Initialize Swiss Ephemeris if needed
+    If Not modSwissItems.InitSwissEph() Then
+        CalculateSessionMoonPhase = "Unknown"
+        Exit Function
+    End If
+    
+    julianDay = modUtilities.DateToJulianDay(sessionDateTime)
+    serr = String(255, vbNullChar)
+    
+    ' Get Sun position
+    result = swe_calc_ut(julianDay, modSwissItems.GetSwissEphConstant("SUN"), modSwissItems.SEFLG_SWIEPH_PUBLIC, xx(0), serr)
+    If result < 0 Then GoTo ErrorHandler
+    sunLon = xx(0)
+    
+    ' Get Moon position
+    result = swe_calc_ut(julianDay, modSwissItems.GetSwissEphConstant("MOON"), modSwissItems.SEFLG_SWIEPH_PUBLIC, xx(0), serr)
+    If result < 0 Then GoTo ErrorHandler
+    moonLon = xx(0)
+    
+    ' Calculate phase angle
+    phase = moonLon - sunLon
+    If phase < 0 Then phase = phase + 360
+    
+    ' Determine phase name
+    Select Case phase
+        Case 0 To 45, 315 To 360
+            CalculateSessionMoonPhase = "New Moon"
+        Case 45 To 135
+            CalculateSessionMoonPhase = "Waxing"
+        Case 135 To 225
+            CalculateSessionMoonPhase = "Full Moon"
+        Case 225 To 315
+            CalculateSessionMoonPhase = "Waning"
+        Case Else
+            CalculateSessionMoonPhase = "Unknown"
+    End Select
+    
+    Exit Function
+    
+ErrorHandler:
+    CalculateSessionMoonPhase = "Unknown"
+End Function
+
+Private Sub Form_Current()
+    ' Update button states when moving between records
+    UpdateFormButtons
+End Sub
+
+Private Sub UpdateFormButtons()
+    ' Update button enabled state based on form state
+    If Me.NewRecord Then
+        Me.btnViewSessionChart.Enabled = False
+        Me.btnAddEditImpressions.Enabled = False
+        Me.btnDeleteSession.Enabled = False
+        Me.chkSessionChartGenerated = False
+    Else
+        ' Check if session chart exists
+        Dim hasChart As Boolean
+        'hasChart = (modChartCalculation.GetChartID("Session", , , Me.txtSessionID) > 0)
+        
+        Me.chkSessionChartGenerated = hasChart
+        Me.btnViewSessionChart.Enabled = hasChart
+        Me.btnAddEditImpressions.Enabled = True
+        Me.btnDeleteSession.Enabled = True
+    End If
+End Sub
+
+' Event handlers for combo box changes
+Private Sub cboStudent_AfterUpdate()
+    ' Update StudentID when student is selected
+    Me.txtPersonID = Nz(Me.cboSelectViewer, 0)
+    
+    ' If "Use Viewer Birth Location" is checked, update session location
+    If Me.chkUseBirthLocation Then
+        CopyStudentLocationToSession
+    End If
+End Sub
+
+Private Sub cboEvent_AfterUpdate()
+    ' Update EventID when event is selected
+    Me.txtEventID = Nz(Me.cboSelectEvent, 0)
+    
+    UpdateChartControls
+    
+End Sub
+
+' Validation functions
+Private Sub dtSessionDate_AfterUpdate()
+    ' Auto-calculate session number based on date
+    CalculateSessionNumber
+End Sub
+
+Private Sub CalculateSessionNumber()
+    ' Since you mentioned 1 session per PersonID+EventID, this would always be 1
+    ' But keeping the logic in case you want to change this later
+    Me.txtSessionNum = 1
+End Sub
+
+'***************************
+' Session Manager Form - Generate Chart Button Event
+' Add this code to your Session Manager form's VBA module
+
+Private Sub btnGenerateChart_Click()
+    On Error GoTo ErrorHandler
+    
+    ' Validate required data before generating chart
+    If Not ValidateSessionData() Then
+        Exit Sub
+    End If
+    
+    ' Show hourglass cursor for long operation
+    DoCmd.Hourglass True
+    
+    Dim SessionID As Long
+    Dim Success As Boolean
+    
+    ' Get or create SessionID
+'    SessionID = GetOrCreateSessionID()
+    SessionID = Me.txtSessionID
+    
+    If SessionID <= 0 Then
+        MsgBox "Error: Unable to determine or create Session ID", vbCritical, "Generate Chart Error"
+        GoTo Cleanup
+    End If
+    
+    Debug.Print "=== GENERATING SESSION CHART FROM SESSION MANAGER ==="
+    Debug.Print "SessionID: " & SessionID
+    
+    ' Generate the session chart using existing function from modSimpleChart
+    Success = modSimpleChart.GenerateSessionChart(SessionID)
+    
+    If Success Then
+        ' Update the Session chart generated checkbox
+        Me.chkSessionChartGenerated = True
+        
+        ' Save the form if it's dirty
+        If Me.Dirty Then
+            DoCmd.RunCommand acCmdSaveRecord
+        End If
+        
+        ' Show success message
+        MsgBox "Session chart generated successfully!" & vbCrLf & _
+               "SessionID: " & SessionID, vbInformation, "Chart Generation Complete"
+        
+'        ' Enable the View Chart button if it exists
+'        If Not IsNull(Me.Controls("btnViewChart")) Then
+'            Me.btnViewChart.Enabled = True
+'        End If
+        
+UpdateChartControls
+
+        
+        Debug.Print "Session chart generation completed successfully"
+    Else
+        MsgBox "Failed to generate session chart. Check debug output for details.", vbCritical, "Chart Generation Failed"
+        Debug.Print "Session chart generation failed"
+    End If
+    
+Cleanup:
+    ' Turn off hourglass
+    DoCmd.Hourglass False
+    Exit Sub
+    
+ErrorHandler:
+    DoCmd.Hourglass False
+    MsgBox "Error generating session chart: " & Err.Number & " - " & Err.Description, vbCritical, "Generate Chart Error"
+    Debug.Print "ERROR in btnGenerateChart_Click: " & Err.Number & " - " & Err.Description
+End Sub
+
+' Function to validate that required session data is present
+Private Function ValidateSessionData() As Boolean
+    On Error GoTo ErrorHandler
+    
+    ValidateSessionData = True
+    
+    ' Check if Viewer (PersonID) is selected
+    'If IsNull(Me.cboSelectViewer) Or Me.cboSelectViewer = "" Then
+     If m_PersonID = 0 Then
+        MsgBox "Please select a Viewer before generating chart.", vbExclamation, "Missing Viewer"
+        Me.cboSelectViewer.SetFocus
+        ValidateSessionData = False
+        Exit Function
+    End If
+    
+    ' Check if Event is selected
+    'If IsNull(Me.cboSelectEvent) Or Me.cboSelectEvent = "" Then
+    If m_EventID = 0 Then
+        MsgBox "Please select an Event before generating chart.", vbExclamation, "Missing Event"
+        Me.cboSelectEvent.SetFocus
+        ValidateSessionData = False
+        Exit Function
+    End If
+    
+    ' Check if Session Date is entered
+    If IsNull(Me.txtSessionDate) Or Me.txtSessionDate = "" Then
+        MsgBox "Please enter a Session Date before generating chart.", vbExclamation, "Missing Session Date"
+        Me.txtSessionDate.SetFocus
+        ValidateSessionData = False
+        Exit Function
+    End If
+    
+    ' Check if Session Start Time is entered
+    If IsNull(Me.txtStartTime) Or Me.txtStartTime = "" Then
+        MsgBox "Please enter a Session Start Time before generating chart.", vbExclamation, "Missing Session Time"
+        Me.txtStartTime.SetFocus
+        ValidateSessionData = False
+        Exit Function
+    End If
+    
+    ' Check if location coordinates are available
+    If (IsNull(Me.txtLatitude) Or Me.txtLatitude = "") Or (IsNull(Me.txtLongitude) Or Me.txtLongitude = "") Then
+        MsgBox "Location coordinates are required for chart generation." & vbCrLf & _
+               "Please use 'Get Coordinates' to obtain latitude and longitude.", vbExclamation, "Missing Coordinates"
+        ValidateSessionData = False
+        Exit Function
+    End If
+    
+    Exit Function
+    
+ErrorHandler:
+    MsgBox "Error validating session data: " & Err.Description, vbCritical, "Validation Error"
+    ValidateSessionData = False
+End Function
+
+' Function to get existing SessionID or create new session record if needed
+Private Function GetOrCreateSessionID() As Long
+    On Error GoTo ErrorHandler
+    
+    GetOrCreateSessionID = 0
+    
+    ' Check if we already have a SessionID (editing existing session)
+    If Not IsNull(Me.txtSessionNum) And Me.txtSessionNum <> "" Then
+        ' Try to find existing session
+        Dim db As DAO.Database
+        Dim rs As DAO.Recordset
+        Dim sql As String
+        
+        Set db = CurrentDb()
+        
+        ' Look for existing session with this Viewer + Event + Session#
+        sql = "SELECT SessionID FROM tblSessions " & _
+              "WHERE PersonID = " & GetPersonIDFromViewer() & _
+              " AND EventID = " & GetEventIDFromEvent() & _
+              " AND SessionNumber = " & m_SessionID
+        
+        Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
+        
+        If Not rs.EOF Then
+            GetOrCreateSessionID = rs!SessionID
+            rs.Close
+            Set db = Nothing
+            Exit Function
+        End If
+        
+        rs.Close
+        Set rs = Nothing
+        Set db = Nothing
+    End If
+    
+    ' If we get here, we need to create a new session record
+    GetOrCreateSessionID = CreateNewSessionRecord()
+    
+    Exit Function
+    
+ErrorHandler:
+    Debug.Print "Error in GetOrCreateSessionID: " & Err.Description
+    GetOrCreateSessionID = 0
+End Function
+
+' Function to create a new session record and return its SessionID
+Private Function CreateNewSessionRecord() As Long
+    On Error GoTo ErrorHandler
+    
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    
+    Set db = CurrentDb()
+    Set rs = db.OpenRecordset("tblSessions", dbOpenDynaset)
+    
+    rs.AddNew
+    With rs
+        !PersonID = GetPersonIDFromViewer()
+        !EventID = GetEventIDFromEvent()
+        !sessionDate = Me.txtSessionDate
+        !SessionStartTime = Me.txtStartTime
+        !SessionEndTime = Nz(Me.txtEndTime, Null)
+        !SessionNumber = Nz(Me.txtSessionNum, 1)
+        !LocationID = GetOrCreateLocationID()
+        !DateCreated = Now()
+        !DateUpdated = Now()
+    End With
+    rs.Update
+    
+    ' Get the SessionID that was just created
+    rs.Bookmark = rs.LastModified
+    CreateNewSessionRecord = rs!SessionID
+    
+    ' Update the form with the new SessionID
+    Me.txtSessionID = rs!SessionID
+    
+    rs.Close
+    Set rs = Nothing
+    Set db = Nothing
+    
+    Debug.Print "Created new session record with SessionID: " & CreateNewSessionRecord
+    
+    Exit Function
+    
+ErrorHandler:
+    Debug.Print "Error creating session record: " & Err.Description
+    CreateNewSessionRecord = 0
+    If Not rs Is Nothing Then
+        rs.Close
+        Set rs = Nothing
+    End If
+    Set db = Nothing
+End Function
+
+' Helper functions to get IDs from combo boxes
+Private Function GetPersonIDFromViewer() As Long
+    ' Assumes the Viewer combo box stores PersonID as the bound column
+    GetPersonIDFromViewer = Nz(Me.cboSelectViewer.Column(0), 0)
+End Function
+
+Private Function GetEventIDFromEvent() As Long
+    ' Assumes the Event combo box stores EventID as the bound column
+    GetEventIDFromEvent = Nz(Me.cboSelectEvent.Column(0), 0)
+End Function
+
+' Function to get or create LocationID based on coordinates
+Private Function GetOrCreateLocationID() As Long
+    On Error GoTo ErrorHandler
+    
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    Dim sql As String
+    
+    Set db = CurrentDb()
+    
+    ' Try to find existing location with same coordinates
+    sql = "SELECT LocationID FROM tblLocations " & _
+          "WHERE Latitude = " & Me.txtLatitude & _
+          " AND Longitude = " & Me.txtLongitude
+    
+    Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
+    
+    If Not rs.EOF Then
+        ' Found existing location
+        GetOrCreateLocationID = rs!LocationID
+    Else
+        ' Need to create new location record
+        rs.Close
+        Set rs = db.OpenRecordset("tblLocations", dbOpenDynaset)
+        
+        rs.AddNew
+        With rs
+            !City = Nz(Me.txtCity, "Unknown")
+            ![State/Province] = Nz(Me.txtStateProv, "")
+            !Country = Nz(Me.cboCountry, "Unknown")
+            !latitude = Me.txtLatitude
+            !longitude = Me.txtLongitude
+            !DateCreated = Now()
+        End With
+        rs.Update
+        
+        rs.Bookmark = rs.LastModified
+        GetOrCreateLocationID = rs!LocationID
+    End If
+    
+    rs.Close
+    Set rs = Nothing
+    Set db = Nothing
+    Exit Function
+    
+ErrorHandler:
+    Debug.Print "Error in GetOrCreateLocationID: " & Err.Description
+    GetOrCreateLocationID = 1 ' Default to LocationID 1 if error
+    If Not rs Is Nothing Then
+        rs.Close
+        Set rs = Nothing
+    End If
+    Set db = Nothing
+End Function
+
+' Add this new procedure to update chart control states
+'Private Sub UpdateChartControls()
+'    Dim chartExists As Boolean
+'
+'    ' Check if we have a saved PersonID and if chart exists
+'    If m_SessionID > 0 And SaveSessionRecord Then
+'        chartExists = GetChartStatus(m_SessionID)
+'    Else
+'        chartExists = False
+'    End If
+'
+'    ' Update checkbox state
+'    Me.chkSessionChartGenerated.value = chartExists
+'
+'    ' Update button states
+'    Me.btnGenerateChart.Enabled = SaveSessionRecord And m_SessionID > 0
+'    Me.btnViewChart.Enabled = chartExists And m_SessionID > 0
+'
+'    ' Update button caption based on chart existence
+'    If chartExists Then
+'        Me.btnGenerateChart.Caption = "Regenerate Session Chart"
+'    Else
+'        Me.btnGenerateChart.Caption = "Generate Session Chart"
+'    End If
+'End Sub
+
+Private Sub UpdateChartControls()
+    Dim chartExists As Boolean
+    
+    ' Check if we have a valid SessionID and if chart exists
+    If m_SessionID > 0 Then
+        chartExists = GetChartStatus(m_SessionID)
+    Else
+        chartExists = False
+    End If
+    
+    ' Update checkbox state
+    Me.chkSessionChartGenerated.value = chartExists
+    
+    ' Update button states
+    Me.btnGenerateChart.Enabled = (m_SessionID > 0)
+    Me.btnViewSessionChart.Enabled = chartExists And (m_SessionID > 0)
+    
+    ' Update button caption based on chart existence
+    If chartExists Then
+        Me.btnGenerateChart.Caption = "Regenerate Session Chart"
+    Else
+        Me.btnGenerateChart.Caption = "Generate Session Chart"
+    End If
+End Sub
+
+
+Private Function GetChartStatus(SessionID As Long) As Boolean
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    Dim sql As String
+    
+    On Error GoTo ErrorHandler
+    
+    Set db = CurrentDb()
+    sql = "SELECT SessionChartGenerated FROM tblSessions WHERE SessionID = " & SessionID
+    Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
+    
+    If Not rs.EOF Then
+        GetChartStatus = Nz(rs!SessionChartGenerated, False)
+    Else
+        GetChartStatus = False
+    End If
+    
+    rs.Close
+    Set rs = Nothing
+    Set db = Nothing
+    Exit Function
+    
+ErrorHandler:
+    GetChartStatus = False
+    If Not rs Is Nothing Then
+        On Error Resume Next
+        rs.Close
+        Set rs = Nothing
+    End If
+    Set db = Nothing
+End Function
+
+Private Function FindSessionID(PersonID As Long, EventID As Long) As Long
+    On Error GoTo ErrorHandler
+    
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    Dim sql As String
+    
+    Set db = CurrentDb()
+    sql = "SELECT SessionID FROM tblSessions WHERE PersonID = " & PersonID & " AND EventID = " & EventID
+    Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
+    
+    If Not rs.EOF Then
+        FindSessionID = rs!SessionID
+    Else
+        FindSessionID = 0
+    End If
+    
+    rs.Close
+    Set rs = Nothing
+    Set db = Nothing
+    Exit Function
+    
+ErrorHandler:
+    FindSessionID = 0
+    If Not rs Is Nothing Then
+        rs.Close
+        Set rs = Nothing
+    End If
+    Set db = Nothing
+End Function
+
+Private Sub LoadToleranceRules()
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    Dim i As Integer
+    
+    On Error GoTo ErrorHandler
+    
+    Set db = CurrentDb()
+    Set rs = db.OpenRecordset("SELECT ToleranceScore, ToleranceColor FROM tblTolerances ORDER BY ToleranceScore DESC")
+    
+    If rs.EOF Then
+        m_ToleranceCount = 0
+        Exit Sub
+    End If
+    
+    ' Count records and resize array
+    rs.MoveLast
+    m_ToleranceCount = rs.recordCount
+    ReDim m_Tolerances(0 To m_ToleranceCount - 1)
+    rs.MoveFirst
+    
+    ' Load data into array
+    i = 0
+    Do While Not rs.EOF
+        m_Tolerances(i).score = rs!ToleranceScore
+        m_Tolerances(i).colorName = rs!ToleranceColor
+        m_Tolerances(i).RGBValue = GetRGBFromColorName(rs!ToleranceColor)
+        i = i + 1
+        rs.MoveNext
+    Loop
+    
+    rs.Close
+    Set rs = Nothing
+    Set db = Nothing
+    Exit Sub
+    
+ErrorHandler:
+    m_ToleranceCount = 0
+    If Not rs Is Nothing Then
+        rs.Close
+        Set rs = Nothing
+    End If
+    Set db = Nothing
+End Sub
+
+Private Function GetRGBFromColorName(colorName As String) As Long
+    Select Case LCase(Trim(colorName))
+        Case "green": GetRGBFromColorName = RGB(0, 255, 0)
+        Case "light green": GetRGBFromColorName = RGB(144, 238, 144)
+        Case "white": GetRGBFromColorName = RGB(255, 255, 255)
+        Case "light red": GetRGBFromColorName = RGB(255, 182, 193)
+        Case "red": GetRGBFromColorName = RGB(255, 0, 0)
+        Case Else: GetRGBFromColorName = RGB(255, 255, 255) ' Default to white
+    End Select
+End Function
+
+Private Function GetColorForScore(score As Double) As Long
+    Dim i As Integer
+    
+    ' Loop through tolerance rules (sorted by score DESC)
+    For i = 0 To m_ToleranceCount - 1
+        If score >= m_Tolerances(i).score Then
+            GetColorForScore = m_Tolerances(i).RGBValue
+            Exit Function
+        End If
+    Next i
+    
+    ' If no match found, return white
+    GetColorForScore = RGB(255, 255, 255)
+End Function
+
+Private Sub ApplySuccessColorCoding()
+    On Error Resume Next
+    
+    ' Check if txtAvgSuccess has a valid numeric value
+    If Not IsNull(Me.txtAvgSuccess) And _
+       Me.txtAvgSuccess.value <> "" And _
+       IsNumeric(Me.txtAvgSuccess.value) And _
+       m_ToleranceCount > 0 Then
+        ' Apply color based on tolerance rules
+        Me.txtAvgSuccess.backColor = GetColorForScore(CDbl(Me.txtAvgSuccess.value))
+    Else
+        ' No value or invalid value - use default white background
+        Me.txtAvgSuccess.backColor = RGB(255, 255, 255)
+    End If
+    
+    On Error GoTo 0
+End Sub
+
+Private Sub Form_Activate()
+    ' This fires when the form gets focus (like returning from Impressions form)
+    ' Recalculate the average success and apply color coding
+    If m_CurrentSessionID > 0 Then
+        CalculateSessionAverageSuccess m_CurrentSessionID
+    End If
+End Sub
+

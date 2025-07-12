@@ -1,0 +1,421 @@
+VERSION 1.0 CLASS
+BEGIN
+  MultiUse = -1  'True
+END
+Attribute VB_Name = "Form_frmEventSearch"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = True
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Option Compare Database
+Option Explicit
+#Const DEBUG_MODE = False
+
+Private Sub btnGenerateEventChart_Click()
+    On Error GoTo ErrorHandler
+    
+    Dim mEventID As Long
+    mEventID = Nz(Me.lstEvents.value, 0)
+    
+    Dim db As Database
+    Dim rs As DAO.Recordset
+    Dim loc As DAO.Recordset
+    Set rs = CurrentDb.OpenRecordset( _
+        "SELECT * FROM tblEvents As E INNER JOIN tblLocations AS L ON E.LocationID = L.LocationID WHERE E.EventID = " & mEventID, dbOpenSnapshot)
+    
+    ' Validate required data for chart generation
+    If IsNull(rs!eventDate.value) Or IsNull(rs!eventTime.value) Then
+        MsgBox "Event Date and Event Time are required for event chart generation.", vbExclamation, "Missing Data"
+        Exit Sub
+    End If
+
+    If IsNull(rs!latitude.value) Or IsNull(rs!longitude.value) Then
+        MsgBox "Location coordinates are required for event chart generation." & vbCrLf & _
+               "Please use the 'Get Coordinates' button first.", vbExclamation, "Missing Coordinates"
+        Exit Sub
+    End If
+    
+    ' Validate that we have a EventID
+    If mEventID = 0 Then
+        MsgBox "Cannot generate event chart for an unsaved Event.", vbExclamation, "Save Required"
+        Exit Sub
+    End If
+    
+    rs.Close: Set rs = Nothing
+    
+    
+    ' Show confirmation for regeneration
+    Dim chartExists As Boolean
+    chartExists = GetChartStatus(mEventID)
+    
+    If chartExists Then
+        If MsgBox("A event chart already exists for this Event. Do you want to regenerate it?", _
+                  vbQuestion + vbYesNo, "Regenerate Chart") = vbNo Then
+            Exit Sub
+        End If
+    End If
+    
+    ' Change cursor to hourglass
+    DoCmd.Hourglass True
+    
+    ' Call the WORKING function from modSimpleChart
+    Dim Success As Boolean
+    Success = modSimpleChart.GenerateEventChart(mEventID)
+    
+    ' Turn off hourglass
+    DoCmd.Hourglass False
+    
+    If Success Then
+        MsgBox "Event chart generated successfully!", vbInformation, "Chart Generated"
+    Else
+        MsgBox "Failed to generate event chart. Please check the error messages.", vbExclamation, "Generation Failed"
+    End If
+    
+    Exit Sub
+    
+ErrorHandler:
+    rs.Close: Set rs = Nothing
+    DoCmd.Hourglass False
+    MsgBox "Error generating event chart: " & Err.Description, vbCritical, "Chart Generation Error"
+End Sub
+
+
+Private Sub btnViewChart_Click()
+    On Error GoTo ErrorHandler
+    
+    Dim selectedEventID As Long
+    selectedEventID = Nz(Me.lstEvents.value, 0)
+    
+    ' Validate that we have an EventID and chart exists
+    If selectedEventID = 0 Then
+        MsgBox "No event record selected/highlighted.", vbExclamation, "No Record"
+        Exit Sub
+    End If
+    
+    ' Double-check that chart exists
+    If Not GetChartStatus(selectedEventID) Then
+        MsgBox "No event chart found for this event. Please generate a chart first.", vbExclamation, "No Chart"
+        Exit Sub
+    End If
+    
+    ' Get the ChartID for this event's natal chart
+    Dim chartID As Long
+    chartID = GetEventChartID(selectedEventID)
+    
+    If chartID = 0 Then
+        MsgBox "Unable to find event chart in database. Please regenerate the chart.", vbExclamation, "Chart Not Found"
+        Exit Sub
+    End If
+    
+    ' Open the aspect grid with the natal chart
+    DoCmd.OpenForm "frmAspectHalfGrid", acNormal, , , , , CStr(chartID)
+    
+    Exit Sub
+    
+ErrorHandler:
+    MsgBox "Error opening event chart view: " & Err.Description, vbExclamation, "Error"
+End Sub
+
+' --- NEW SUBROUTINE ---
+Private Sub btnViewSessions_Click()
+    On Error GoTo ErrorHandler
+    
+    Dim pid As Long
+    pid = Nz(Me.lstEvents.value, 0)
+    
+    ' Check for a valid EventID.
+    If IsNull(pid) Or pid = 0 Then
+        MsgBox "Cannot view sessions for an unsaved event. Please save this record first.", vbExclamation, "Save Required"
+        Exit Sub
+    End If
+    
+    ' Pass the context to the Session Manager form.
+    ' Format: "EventID=28"
+    Dim openArgs As String
+    openArgs = "EventID=" & pid
+    
+    ' Open the Session Manager form in Dialog mode.
+    DoCmd.OpenForm "frmSessionManager", acViewNormal, , , , , openArgs
+    
+    Exit Sub
+
+ErrorHandler:
+    MsgBox "An error occurred opening the Session Manager: " & Err.Description, vbCritical, "Error"
+End Sub
+' --- END NEW SUBROUTINE ---
+'=== Initialize form ===
+Private Sub Form_Load()
+    Me.cboSearchField = ""
+    Me.txtSearchText = ""
+End Sub
+
+
+Private Sub SetupListBox()
+    With Me.lstEvents
+        .RowSourceType = "Table/Query"
+        .ColumnCount = 7
+        .BoundColumn = 1
+        .ColumnHeads = False
+        .ColumnWidths = ".70cm;6.5cm;2.25cm;2.35cm;1.95cm;1.75cm;1.75cm"
+        .RowSource = _
+            "Select e.EventID AS 'EventID', e.EventName AS 'Event Name', et.Event_Desc AS 'Event Type', " & _
+            "IIf(e.EventChartGenerated, 'Yes', 'No') AS 'Chart Ready?', " & _
+            "e.EventDate AS 'Event Date', e.TotalScore AS 'Total Score', e.OverUnder AS 'Over/Under' " & _
+            "FROM tblEvents as e LEFT JOIN lu_EventType as et on e.EventType = et.ID Order By e.EventID DESC;"
+    End With
+End Sub
+
+'=== Search button ===
+Private Sub btnSearch_Click()
+    On Error GoTo ErrHandler
+    
+    Dim strSQL   As String
+    Dim strWhere As String
+    Dim db       As DAO.Database
+    Dim rs       As DAO.Recordset
+    Dim txt      As String
+    
+    txt = Nz(Me.txtSearchText, "")
+    If Len(Trim(txt)) = 0 Then
+        SetupListBox
+        Exit Sub
+    End If
+    
+    
+    
+    ' Base SELECT
+'    strSQL = _
+'        "Select e.EventID AS [Event ID], e.EventName AS [Event Name], et.Event_Desc AS [EventType], " & _
+'        "e.EventChartGenerated AS [Chart Ready?], e.EventDate AS [EventDate] " & _
+'        "FROM tblEvents as e LEFT JOIN lu_EventType as et on e.EventType = et.ID "
+    
+strSQL = _
+    "Select e.EventID AS [Event ID], e.EventName AS [Event Name], et.Event_Desc AS [EventType], " & _
+    "IIf(e.EventChartGenerated, '?', '?') AS [Chart Ready?], e.EventDate AS [EventDate] " & _
+    "FROM tblEvents as e LEFT JOIN lu_EventType as et on e.EventType = et.ID "
+    
+    ' Build WHERE clause
+    Select Case Me.cboSearchField
+        Case "ID", "EventID"
+            ' exact match on the numeric key
+            If IsNumeric(txt) Then
+                strWhere = "WHERE e.EventID = " & CLng(txt) & " "
+            Else
+                MsgBox "Please enter a numeric EventID.", vbExclamation
+                Exit Sub
+            End If
+            
+        Case "EventName"
+            strWhere = "WHERE e.EventName LIKE '*" & Replace(txt, "'", "''") & "*' "
+            
+        Case "EventType"
+            strWhere = "WHERE et.Event_Desc LIKE '*" & Replace(txt, "'", "''") & "*' "
+            
+        Case "EventDate"
+            If IsDate(txt) Then
+                strWhere = "WHERE e.EventDate = #" & Format(CDate(txt), "mm\/dd\/yyyy") & "# "
+            Else
+                strWhere = "WHERE Format(e.EventDate,'mm/dd/yyyy') LIKE '*" & Replace(txt, "'", "''") & "*' "
+            End If
+            
+        Case Else
+            strWhere = ""
+    End Select
+    
+    ' Finalize and run
+    strSQL = strSQL & strWhere & "ORDER BY e.EventID;"
+    Me.lstEvents.RowSource = strSQL
+    
+    Set db = CurrentDb
+    Set rs = db.OpenRecordset(strSQL, dbOpenSnapshot)
+    If rs.recordCount = 0 Then
+        MsgBox "No events found matching your search criteria.", vbInformation, "No Results"
+    End If
+
+CleanExit:
+    On Error Resume Next
+    rs.Close: Set rs = Nothing
+    Set db = Nothing
+    Exit Sub
+
+ErrHandler:
+    MsgBox "Error during search: " & Err.Number & " - " & Err.Description, vbExclamation, "Search Error"
+    Resume CleanExit
+End Sub
+
+
+'=== Clear button ===
+Private Sub btnClear_Click()
+    Me.txtSearchText = Null
+    Me.cboSearchField = "EventType"
+    SetupListBox
+End Sub
+
+'=== Add New Event ===
+Private Sub btnAddNew_Click()
+    DoCmd.OpenForm "frmEventNew", DataMode:=acFormAdd
+End Sub
+
+Private Sub btnEdit_Click()
+    Dim pid As Long
+    pid = Nz(Me.lstEvents.value, 0)
+    If pid = 0 Then
+        MsgBox "Please select an event to edit.", vbInformation, "No Selection"
+        Exit Sub
+    End If
+    DoCmd.OpenForm _
+      "frmEventEdit", _
+      DataMode:=acFormEdit, _
+      openArgs:=CStr(pid)
+End Sub
+
+
+
+'=== Helper to check chart status ===
+Private Function ChartGenerated(PersonID As Long) As Boolean
+    Dim rs As DAO.Recordset
+    Set rs = CurrentDb.OpenRecordset( _
+        "SELECT NatalChartGenerated FROM tblPeople WHERE PersonID=" & PersonID, _
+        dbOpenSnapshot)
+    ChartGenerated = (Not rs.EOF And rs!NatalChartGenerated)
+    rs.Close: Set rs = Nothing
+End Function
+
+'=== Close Form ===
+Private Sub btnClose_Click()
+    DoCmd.Close acForm, Me.name
+End Sub
+
+'=== Double-click list opens record ===
+Private Sub lstEvents_DblClick(Cancel As Integer)
+    btnEdit_Click
+End Sub
+
+Private Sub Form_Open(Cancel As Integer)
+    SetupListBox
+End Sub
+
+' Add this code to frmEventSearch after the existing button click events
+
+Private Sub btnViewers_Click()
+    On Error GoTo ErrorHandler
+    
+    ' Get the selected EventID from the list box
+    Dim selectedEventID As Long
+    selectedEventID = Nz(Me.lstEvents.value, 0)
+    
+    If selectedEventID = 0 Then
+        MsgBox "Please select an event from the list to assign viewers.", vbInformation, "No Selection"
+        Exit Sub
+    End If
+    
+    ' Get the Event Name for the selected event
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    Dim eventName As String
+    
+    Set db = CurrentDb()
+    Set rs = db.OpenRecordset("SELECT EventName FROM tblEvents WHERE EventID = " & selectedEventID, dbOpenSnapshot)
+    
+    If Not rs.EOF Then
+        eventName = Nz(rs!eventName, "")
+    Else
+        eventName = ""
+    End If
+    
+    rs.Close
+    Set rs = Nothing
+    Set db = Nothing
+    
+    ' Pass the EventID and EventName to the viewer assignment form via OpenArgs
+    ' The format is "EventID|EventName" (same format used in other forms)
+    Dim openArgs As String
+    openArgs = selectedEventID & "|" & eventName
+    
+    ' Open the viewer assignment form (frmViewerAssignList) in Dialog mode
+    ' This form allows users to assign/unassign viewers and shows current assignments
+    DoCmd.OpenForm "frmViewerAssignList", acViewNormal, , , , acDialog, openArgs
+    
+    ' Optionally refresh the list after viewer assignment changes
+    ' (in case any event data was updated)
+    Me.lstEvents.Requery
+    
+    Exit Sub
+
+ErrorHandler:
+    ' Clean up resources
+    If Not rs Is Nothing Then
+        rs.Close
+        Set rs = Nothing
+    End If
+    Set db = Nothing
+    
+    MsgBox "An unexpected error occurred while trying to open the viewer assignment form." & vbCrLf & _
+           "Error: " & Err.Description, vbCritical, "Error"
+End Sub
+
+Private Function GetChartStatus(EventID As Long) As Boolean
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    Dim sql As String
+    
+    On Error GoTo ErrorHandler
+    
+    Set db = CurrentDb()
+    sql = "SELECT EventChartGenerated FROM tblEvents WHERE EventID = " & EventID
+    Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
+    
+    If Not rs.EOF Then
+        GetChartStatus = Nz(rs!EventChartGenerated, False)
+    Else
+        GetChartStatus = False
+    End If
+    
+    rs.Close
+    Set rs = Nothing
+    Set db = Nothing
+    Exit Function
+    
+ErrorHandler:
+    GetChartStatus = False
+    If Not rs Is Nothing Then
+        On Error Resume Next
+        rs.Close
+        Set rs = Nothing
+    End If
+    Set db = Nothing
+End Function
+
+Private Function GetEventChartID(EventID As Long) As Long
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    Dim sql As String
+    
+    On Error GoTo ErrorHandler
+    
+    Set db = CurrentDb()
+    sql = "SELECT ChartID FROM tblCharts WHERE EventID = " & EventID & " AND ChartType = 'Event'"
+    Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
+    
+    If Not rs.EOF Then
+        GetEventChartID = rs!chartID
+    Else
+        GetEventChartID = 0
+    End If
+    
+    rs.Close
+    Set rs = Nothing
+    Set db = Nothing
+    Exit Function
+    
+ErrorHandler:
+    GetEventChartID = 0
+    If Not rs Is Nothing Then
+        On Error Resume Next
+        rs.Close
+        Set rs = Nothing
+    End If
+    Set db = Nothing
+End Function
+
+

@@ -1,0 +1,511 @@
+VERSION 1.0 CLASS
+BEGIN
+  MultiUse = -1  'True
+END
+Attribute VB_Name = "Form_frmStudentNew"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = True
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Option Compare Database
+Option Explicit
+#Const DEBUG_MODE = False
+
+' Swiss Ephemeris declarations
+' Constants for planets and calculation flags
+Private Const SE_SUN As Long = 0
+Private Const SE_MOON As Long = 1
+Private Const SE_MERCURY As Long = 2
+Private Const SE_VENUS As Long = 3
+Private Const SE_MARS As Long = 4
+Private Const SE_JUPITER As Long = 5
+Private Const SE_SATURN As Long = 6
+Private Const SE_URANUS As Long = 7
+Private Const SE_NEPTUNE As Long = 8
+Private Const SE_PLUTO As Long = 9
+
+' Calculation flags
+Private Const SEFLG_SPEED As Long = 256 ' Return speed values
+Private Const SEFLG_SWIEPH As Long = 2 ' Use Swiss Ephemeris
+
+' Swiss Ephemeris DLL declarations
+#If VBA7 Then
+    #If Win64 Then
+        ' 64-bit declarations
+        Private Declare PtrSafe Function swe_calc_ut Lib "swedll64.dll" ( _
+            ByVal tjd_ut As Double, _
+            ByVal ipl As Long, _
+            ByVal iflag As Long, _
+            ByRef xx As Double, _
+            ByRef serr As String) As Long
+            
+        Private Declare PtrSafe Function swe_set_ephe_path Lib "swedll64.dll" ( _
+            ByVal path As String) As Long
+            
+        Private Declare PtrSafe Function swe_close Lib "swedll64.dll" () As Long
+        
+        Private Declare PtrSafe Function swe_houses Lib "swedll64.dll" ( _
+            ByVal tjd_ut As Double, _
+            ByVal geolat As Double, _
+            ByVal geolon As Double, _
+            ByVal hsys As Long, _
+            ByRef cusps As Double, _
+            ByRef ascmc As Double) As Long
+    #Else
+        ' 32-bit declarations with PtrSafe (VBA7 but not 64-bit)
+        Private Declare PtrSafe Function swe_calc_ut Lib "swedll32.dll" ( _
+            ByVal tjd_ut As Double, _
+            ByVal ipl As Long, _
+            ByVal iflag As Long, _
+            ByRef xx As Double, _
+            ByRef serr As String) As Long
+            
+        Private Declare PtrSafe Function swe_set_ephe_path Lib "swedll32.dll" ( _
+            ByVal path As String) As Long
+            
+        Private Declare PtrSafe Function swe_close Lib "swedll32.dll" () As Long
+        
+        Private Declare PtrSafe Function swe_houses Lib "swedll32.dll" ( _
+            ByVal tjd_ut As Double, _
+            ByVal geolat As Double, _
+            ByVal geolon As Double, _
+            ByVal hsys As Long, _
+            ByRef cusps As Double, _
+            ByRef ascmc As Double) As Long
+    #End If
+#Else
+    ' 32-bit declarations (pre-VBA7)
+    'Private Declare Function swe_calc_ut Lib "swedll32.dll" ( _
+    '   ByVal tjd_ut As Double, _
+    '   ByVal ipl As Long, _
+    '   ByVal iflag As Long, _
+    '   ByRef xx As Double, _
+    '   ByRef serr As String) As Long
+        
+   'Private Declare Function swe_set_ephe_path Lib "swedll32.dll" ( _
+   '    ByVal path As String) As Long
+        
+   'Private Declare Function swe_close Lib "swedll32.dll" () As Long
+    
+   'Private Declare Function swe_houses Lib "swedll32.dll" ( _
+   '    ByVal tjd_ut As Double, _
+   '    ByVal geolat As Double, _
+   '    ByVal geolon As Double, _
+   '    ByVal hsys As Long, _
+   '    ByRef cusps As Double, _
+   '    ByRef ascmc As Double) As Long
+#End If
+    
+' Module-level vars
+Dim mlocationID     As Long
+Dim mLocationExists As Boolean
+Dim mPersonID       As Long       ' will hold the new personID
+Dim mRecordSaved    As Boolean    ' track if Save succeeded
+
+Private Sub btnCancel_Click()
+    If Me.Dirty Then
+        If MsgBox("Discard changes?", vbYesNo + vbQuestion) = vbYes Then
+            Me.Undo
+        Else
+            Exit Sub
+        End If
+    End If
+    DoCmd.Close acForm, Me.name
+End Sub
+
+
+
+Private Sub btnClose_Click()
+    DoCmd.Close acForm, Me.name
+End Sub
+
+Private Sub btnGetCoordinates_Click()
+    Dim strCity As String
+    Dim strStateProv As String
+    Dim strCountry As String
+    Dim strAddress As String
+    Dim strResult As String
+    Dim dblLat As Double
+    Dim dblLng As Double
+    
+    ' Get values from form controls
+    strCity = ProperCase(Nz(Me.txtCity, ""))
+    strStateProv = UCase(Nz(Me.txtStateProv, ""))
+    strCountry = Nz(Me.cboCountry, "")
+    
+    ' Basic validation - ensure required fields are filled
+    If Trim(strCity) = "" Or Trim(strCountry) = "" Then
+        MsgBox "City and Country are required fields to get coordinates.", vbExclamation, "Missing Information"
+        If Trim(strCity) = "" Then
+            Me.txtCity.SetFocus
+        Else
+            Me.cboCountry.SetFocus
+        End If
+        Exit Sub
+    End If
+    
+    ' Special case: USA requires state
+    If UCase(Trim(strCountry)) = "USA" And Trim(strStateProv) = "" Then
+        MsgBox "State is required for locations in the USA.", vbExclamation, "Missing Information"
+        Me.txtStateProv.SetFocus
+        Exit Sub
+    End If
+    
+    ' Check if location already exists in database
+    mlocationID = modUtilities.FindLocationID(strCity, strStateProv, strCountry)
+  
+    If mlocationID > 0 Then
+        ' Location exists, get coordinates from database
+        mLocationExists = True
+        FillLocationCoordinates mlocationID
+        MsgBox "Location found in database. Coordinates loaded.", vbInformation, "Success"
+    Else
+        ' Location doesn't exist, get coordinates from API
+        ' Format the address for the API
+        If Trim(strStateProv) = "" Then
+            strAddress = Trim(strCity) & ", " & Trim(strCountry)
+        Else
+            strAddress = Trim(strCity) & ", " & Trim(strStateProv) & ", " & Trim(strCountry)
+        End If
+        
+        ' Show hourglass cursor
+        DoCmd.Hourglass True
+        
+        ' Call the API function to get coordinates - with single address parameter
+        strResult = GetLatLong_LocationIQ(strAddress)
+        
+        ' Process the result
+        If Left(strResult, 5) = "Lat: " Then
+            ' Parse the latitude and longitude from the result
+            dblLat = val(Mid(strResult, 6, InStr(strResult, ", Lng:") - 6))
+            dblLng = val(Mid(strResult, InStr(strResult, ", Lng:") + 7))
+            
+            ' Display coordinates on form
+            Me.txtLatitude.value = dblLat
+            Me.txtLongitude.value = dblLng
+            
+            ' Add location to database and get the new LocationID
+            mlocationID = modUtilities.AddNewLocation(strCity, strStateProv, strCountry, dblLat, dblLng)
+            mLocationExists = True
+            
+            MsgBox "Coordinates retrieved successfully!", vbInformation, "Success"
+        Else
+            ' Show error message
+            MsgBox "Error retrieving coordinates: " & strResult, vbExclamation, "API Error"
+        End If
+        
+        ' Turn off hourglass cursor
+        DoCmd.Hourglass False
+    End If
+End Sub
+
+Private Sub FillLocationCoordinates(LocationID As Long)
+    ' Fill latitude and longitude fields from database location
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    Dim sql As String
+    
+    Set db = CurrentDb()
+    sql = "SELECT Latitude, Longitude FROM tblLocations WHERE LocationID=" & LocationID
+    
+    Set rs = db.OpenRecordset(sql)
+    
+    If Not rs.EOF Then
+        Me.txtLatitude.value = rs!latitude
+        Me.txtLongitude.value = rs!longitude
+    End If
+    
+    rs.Close
+    Set rs = Nothing
+    Set db = Nothing
+End Sub
+
+
+
+
+' Update Form_Load to include chart status setup
+Private Sub Form_Load()
+    ' Set up the Country combo box
+    Me.cboCountry.RowSource = "SELECT Country_Name FROM lu_Country ORDER BY Country_Name"
+    Me.cboCountry.ColumnCount = 1
+    Me.cboCountry.BoundColumn = 1
+    Me.cboCountry.ColumnWidths = "2.5in"
+    Me.cboCountry.LimitToList = True
+    
+    ' Initialize form
+    mLocationExists = False
+    mPersonID = 0
+    mRecordSaved = False
+    
+    ' Initialize chart-related controls
+    UpdateChartControls
+    
+    ' Set focus to first field
+    Me.txtFirstName.SetFocus
+End Sub
+
+' Add this new procedure to update chart control states
+Private Sub UpdateChartControls()
+    Dim chartExists As Boolean
+    
+    ' Check if we have a saved PersonID and if chart exists
+    If mPersonID > 0 And mRecordSaved Then
+        chartExists = GetChartStatus(mPersonID)
+    Else
+        chartExists = False
+    End If
+    
+    ' Update checkbox state
+    Me.chkNatalChartGenerated.value = chartExists
+    
+    ' Update button states
+    Me.btnGenerateNatalChart.Enabled = mRecordSaved And mPersonID > 0
+    Me.btnViewNatalChart.Enabled = chartExists And mPersonID > 0
+    
+    ' Update button caption based on chart existence
+    If chartExists Then
+        Me.btnGenerateNatalChart.Caption = "Regenerate Natal Chart"
+    Else
+        Me.btnGenerateNatalChart.Caption = "Generate Natal Chart"
+    End If
+End Sub
+
+
+' Update your existing btnSave_Click to refresh chart controls after save
+Private Sub btnSave_Click()
+    On Error GoTo ErrHandler
+
+    Dim existingID As Long
+    existingID = FindPersonID( _
+                   Nz(Me.txtFirstName, ""), _
+                   Nz(Me.txtLastName, ""), _
+                   Nz(Me.dtBirthDate, Date), _
+                   Nz(Me.dtBirthTime, Time), _
+                   mlocationID _
+                 )
+
+    Dim db As DAO.Database
+    Set db = CurrentDb()
+
+
+    If existingID > 0 Then
+            Dim strInitials As String
+            strInitials = Mid(ProperCase(Me.txtFirstName), 1, 1) & Mid(ProperCase(Me.txtLastName), 1, 1)
+            
+            Dim sql As String
+        
+            sql = "UPDATE tblPeople " & _
+                  "SET FirstName = '" & Replace(ProperCase(Me.txtFirstName), "'", "''") & "', " & _
+                  "    LastName = '" & Replace(ProperCase(Me.txtLastName), "'", "''") & "', " & _
+                  "    BirthDate = #" & Format(Me.dtBirthDate, "mm/dd/yyyy") & "#, " & _
+                  "    BirthTime = #" & Format(Me.dtBirthTime, "hh:nn:ss") & "#, " & _
+                  "    LocationID = " & mlocationID & ", " & _
+                  "    Initials = '" & Replace(strInitials, "'", "''") & "', " & _
+                  "    DateUpdated = #" & Format(Now(), "mm/dd/yyyy hh:nn:ss") & "# " & _
+                  "WHERE PersonID = " & existingID
+              
+         
+            db.Execute sql, dbFailOnError
+            
+            Set db = Nothing
+            
+            MsgBox "Viewer saved successfully! Existing ID = " & mPersonID, vbInformation
+            
+            Exit Sub
+    Else
+            '— 2) No duplicate ? Add the new person —
+            Dim rsPeople As DAO.Recordset
+            Set rsPeople = db.OpenRecordset("tblPeople", dbOpenDynaset)
+        
+            rsPeople.AddNew
+            
+              rsPeople!FirstName = ProperCase(Me.txtFirstName)
+              rsPeople!LastName = ProperCase(Me.txtLastName)
+              rsPeople!BirthDate = Me.dtBirthDate
+              rsPeople!BirthTime = Me.dtBirthTime
+              rsPeople!LocationID = mlocationID
+              rsPeople!NatalChartGenerated = False
+              rsPeople!DateCreated = Now()
+              rsPeople!DateUpdated = Now()
+              rsPeople!Initials = Mid(ProperCase(Me.txtFirstName), 1, 1) & Mid(ProperCase(Me.txtLastName), 1, 1)
+              
+            rsPeople.Update
+        
+            ' Grab the newly assigned PersonID
+            rsPeople.Bookmark = rsPeople.LastModified
+            mPersonID = rsPeople!PersonID
+            mRecordSaved = True
+            
+            rsPeople.Close
+            Set rsPeople = Nothing
+            End If
+            
+        Set db = Nothing
+    
+        ' Update chart controls after successful save
+        UpdateChartControls
+    
+        MsgBox "Student saved successfully! New ID = " & mPersonID, vbInformation
+    
+        Exit Sub
+    
+    
+ErrHandler:
+    MsgBox "Error saving student: " & Err.Description, vbExclamation, "Save Error"
+End Sub
+
+' Add the Generate Natal Chart button click event
+Private Sub btnGenerateNatalChart_Click()
+    On Error GoTo ErrorHandler
+    
+    ' Validate that record is saved and we have required data
+    If Not mRecordSaved Or mPersonID = 0 Then
+        MsgBox "Please save the student record first before generating a natal chart.", vbExclamation, "Save Required"
+        Exit Sub
+    End If
+    
+    ' Validate required birth data
+    If IsNull(Me.dtBirthDate) Or IsNull(Me.dtBirthTime) Then
+        MsgBox "Birth date and time are required to generate a natal chart.", vbExclamation, "Missing Data"
+        Exit Sub
+    End If
+    
+    ' Validate location data
+    If mlocationID = 0 Or IsNull(Me.txtLatitude) Or IsNull(Me.txtLongitude) Then
+        MsgBox "Valid location with coordinates is required to generate a natal chart.", vbExclamation, "Missing Location"
+        Exit Sub
+    End If
+    
+    ' Show confirmation for regeneration
+    Dim chartExists As Boolean
+    chartExists = GetChartStatus(mPersonID)
+    
+    If chartExists Then
+        If MsgBox("A natal chart already exists for this student. Do you want to regenerate it?", _
+                  vbQuestion + vbYesNo, "Regenerate Chart") = vbNo Then
+            Exit Sub
+        End If
+    End If
+    
+    ' Change cursor to hourglass
+    DoCmd.Hourglass True
+    
+    ' Call the WORKING function from modSimpleChart (not the form's version)
+    Dim Success As Boolean
+    Success = modSimpleChart.GenerateNatalChart(mPersonID)
+    
+    ' Turn off hourglass
+    DoCmd.Hourglass False
+    
+    If Success Then
+        ' Update the controls to reflect the new chart status
+        UpdateChartControls
+        MsgBox "Natal chart generated successfully!", vbInformation, "Chart Generated"
+    Else
+        MsgBox "Failed to generate natal chart. Please check the error messages.", vbExclamation, "Generation Failed"
+    End If
+    
+    Exit Sub
+    
+ErrorHandler:
+    DoCmd.Hourglass False
+    MsgBox "Error generating natal chart: " & Err.Description, vbExclamation, "Error"
+End Sub
+
+
+Private Sub btnViewNatalChart_Click()
+    On Error GoTo ErrorHandler
+    
+    ' Validate that we have a PersonID and chart exists
+    If mPersonID = 0 Then
+        MsgBox "No viewer record found.", vbExclamation, "No Record"
+        Exit Sub
+    End If
+    
+    ' Double-check that chart exists
+    If Not GetChartStatus(mPersonID) Then
+        MsgBox "No natal chart found for this viewer. Please generate a chart first.", vbExclamation, "No Chart"
+        Exit Sub
+    End If
+    
+    ' Get the ChartID for this person's natal chart
+    Dim chartID As Long
+    chartID = GetNatalChartID(mPersonID)
+    
+    If chartID = 0 Then
+        MsgBox "Unable to find natal chart in database. Please regenerate the chart.", vbExclamation, "Chart Not Found"
+        Exit Sub
+    End If
+    
+    ' Open the aspect grid with the natal chart
+    DoCmd.OpenForm "frmAspectHalfGrid", acNormal, , , , , CStr(chartID)
+    
+    Exit Sub
+    
+ErrorHandler:
+    MsgBox "Error opening natal chart view: " & Err.Description, vbExclamation, "Error"
+End Sub
+
+Private Function GetChartStatus(PersonID As Long) As Boolean
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    Dim sql As String
+    
+    On Error GoTo ErrorHandler
+    
+    Set db = CurrentDb()
+    sql = "SELECT NatalChartGenerated FROM tblPeople WHERE PersonID = " & PersonID
+    Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
+    
+    If Not rs.EOF Then
+        GetChartStatus = Nz(rs!NatalChartGenerated, False)
+    Else
+        GetChartStatus = False
+    End If
+    
+    rs.Close
+    Set rs = Nothing
+    Set db = Nothing
+    Exit Function
+    
+ErrorHandler:
+    GetChartStatus = False
+    If Not rs Is Nothing Then
+        On Error Resume Next
+        rs.Close
+        Set rs = Nothing
+    End If
+    Set db = Nothing
+End Function
+
+Private Function GetNatalChartID(PersonID As Long) As Long
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    Dim sql As String
+    
+    On Error GoTo ErrorHandler
+    
+    Set db = CurrentDb()
+    sql = "SELECT ChartID FROM tblCharts WHERE PersonID = " & PersonID & " AND ChartType = 'Natal'"
+    Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
+    
+    If Not rs.EOF Then
+        GetNatalChartID = rs!chartID
+    Else
+        GetNatalChartID = 0
+    End If
+    
+    rs.Close
+    Set rs = Nothing
+    Set db = Nothing
+    Exit Function
+    
+ErrorHandler:
+    GetNatalChartID = 0
+    If Not rs Is Nothing Then
+        On Error Resume Next
+        rs.Close
+        Set rs = Nothing
+    End If
+    Set db = Nothing
+End Function

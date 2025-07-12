@@ -1,0 +1,648 @@
+VERSION 1.0 CLASS
+BEGIN
+  MultiUse = -1  'True
+END
+Attribute VB_Name = "Form_frmAspectGrid"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = True
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Option Compare Database
+Option Explicit
+' =================================================================
+' frmAspectGrid - Chart Display Form
+' =================================================================
+' This form displays planetary positions and aspects for a given chart
+' Called from Session Manager with ChartID parameter
+
+' Form-level variables
+Private m_ChartID As Long
+Private m_ChartType As String
+Private m_CurrentChartType As String
+Private m_ChartTitle As String
+Private m_EventName As String
+Private m_PersonID As Long
+Private m_EventID As Long
+Private m_SessionID As Long
+
+
+' =================================================================
+' FORM EVENTS
+' =================================================================
+
+Private Sub Form_Load()
+    On Error GoTo ErrorHandler
+    
+     ' Parse OpenArgs to get EventID and EventName
+    If Not IsNull(Me.openArgs) And Len(Me.openArgs) > 0 Then
+        Dim args() As String
+        args = Split(Me.openArgs, "|")
+        
+        If UBound(args) >= 0 Then
+            m_ChartID = CLng(args(0))
+            
+            ' Load and display the chart data
+            LoadChartData
+        Else
+            MsgBox "Invalid chart ID received: " & Me.openArgs, vbCritical, "Chart Display Error"
+            DoCmd.Close acForm, Me.name
+        End If
+        
+        If UBound(args) >= 1 Then
+            m_EventName = args(1)
+            If Len(m_EventName) > 0 Then Me.lblHeaderLine1.Caption = "Event: " & m_EventName
+        End If
+        
+        ' Load the data now that we have the EventID
+'        If m_EventID > 0 Then
+'            BuildAndShowViewerData
+'        End If
+    End If
+    'm_FormLoading = True
+    
+    ' Set up dropdown
+    With Me.cboChartType
+        .RowSourceType = "Value List"
+        .RowSource = GetChartTypeOptions()
+        .ColumnCount = 1
+        .BoundColumn = 1
+        .LimitToList = True
+    End With
+    
+    ' Parse OpenArgs
+    ParseOpenArgs
+    
+    ' Load initial chart
+    LoadSelectedChart
+    
+    'm_FormLoading = False
+    Exit Sub
+    
+ErrorHandler:
+    MsgBox "Error loading chart display: " & Err.Description, vbCritical, "Form Load Error"
+    Debug.Print "ERROR in Form_Load: " & Err.Number & " - " & Err.Description
+    DoCmd.Close acForm, Me.name
+End Sub
+
+
+' =================================================================
+' CHART DATA LOADING
+' =================================================================
+Private Sub LoadChartData()
+    On Error GoTo ErrorHandler
+    
+    Debug.Print "Loading chart data for ChartID: " & m_ChartID
+    
+    ' Load chart metadata
+    LoadChartMetadata
+    
+    ' Format grid components (do this early, before populating)
+    FormatGridCells
+    FormatGridHeaders
+    
+    ' Populate grid headers
+    PopulateGridHeaders
+    
+    ' Populate aspect grid with color coding
+    PopulateAspectGrid
+    
+    ' Update form title
+    Me.Caption = "Chart Display - " & m_ChartTitle
+    
+    Exit Sub
+    
+ErrorHandler:
+    MsgBox "Error loading chart data: " & Err.Description, vbCritical, "Data Load Error"
+    Debug.Print "ERROR in LoadChartData: " & Err.Description
+End Sub
+
+Private Sub LoadChartMetadata()
+    On Error GoTo ErrorHandler
+    
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    Dim sql As String
+    
+    Set db = CurrentDb()
+    
+    ' Get chart information
+    sql = "SELECT c.*, p.FirstName, p.LastName, e.EventName " & _
+          "FROM (tblCharts c " & _
+          "LEFT JOIN tblPeople p ON c.PersonID = p.PersonID) " & _
+          "LEFT JOIN tblEvents e ON c.EventID = e.EventID " & _
+          "WHERE c.ChartID = " & m_ChartID
+    
+    Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
+    
+    If Not rs.EOF Then
+        m_ChartType = Nz(rs!chartType, "Unknown")
+        
+        ' Build chart title based on chart type
+        Select Case m_ChartType
+            Case "Natal"
+                m_ChartTitle = "Natal Chart - " & Nz(rs!FirstName, "") & " " & Nz(rs!LastName, "")
+            Case "Event"
+                m_ChartTitle = "Event Chart - " & Nz(rs!eventName, "Unknown Event")
+            Case "Session"
+                m_ChartTitle = "Session Chart - " & Format(rs!ChartDate, "mm/dd/yyyy") & " " & Format(rs!ChartTime, "h:nn AM/PM")
+            Case Else
+                m_ChartTitle = m_ChartType & " Chart - " & Format(rs!ChartDate, "mm/dd/yyyy")
+        End Select
+        
+        ' Update labels on form
+        Me.lblChartTitle.Caption = m_ChartTitle
+        Me.lblChartDate.Caption = "Date: " & Format(rs!ChartDate, "dddd, mmmm d, yyyy") & " at " & Format(rs!ChartTime, "h:nn AM/PM")
+ '       Me.lblLocation.Caption =
+    Else
+        m_ChartTitle = "Chart Not Found"
+        Me.lblChartTitle.Caption = "Chart ID " & m_ChartID & " not found"
+    End If
+    
+    rs.Close
+    Set db = Nothing
+    
+    Exit Sub
+    
+ErrorHandler:
+    Debug.Print "Error in LoadChartMetadata: " & Err.Description
+    m_ChartTitle = "Error Loading Chart"
+End Sub
+
+
+' =================================================================
+' BUTTON EVENTS
+' =================================================================
+
+Private Sub btnClose_Click()
+    DoCmd.Close acForm, Me.name
+End Sub
+
+Private Sub btnRefresh_Click()
+    LoadChartData
+End Sub
+
+Private Sub btnPrint_Click()
+    On Error GoTo ErrorHandler
+    
+    ' Print the form
+    DoCmd.PrintOut acPrintAll
+    Exit Sub
+    
+ErrorHandler:
+    MsgBox "Error printing chart: " & Err.Description, vbCritical, "Print Error"
+End Sub
+
+' Grid Creation
+Private Sub PopulateGridHeaders()
+    On Error GoTo ErrorHandler
+    
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    Dim sql As String
+    Dim i As Integer
+    
+    Set db = CurrentDb()
+    
+    ' Get celestial bodies in display order
+    sql = "SELECT BodyID, BodyName, Symbol, DisplayOrder " & _
+          "FROM tblCelestialBodies " & _
+          "WHERE IsActive = True " & _
+          "ORDER BY DisplayOrder"
+    
+    Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
+    
+    i = 1
+    Do While Not rs.EOF And i <= 18
+        ' Populate horizontal header
+        Me.Controls("header_" & i).Caption = Nz(rs!Symbol, Left(rs!BodyName, 2))
+        
+        ' Populate vertical header
+        Me.Controls("sidebar_" & i).Caption = Nz(rs!Symbol, Left(rs!BodyName, 2))
+        
+        Debug.Print "Header " & i & ": " & rs!BodyName & " (" & Nz(rs!Symbol, "No Symbol") & ")"
+        
+        rs.MoveNext
+        i = i + 1
+    Loop
+    
+    ' Clear any remaining headers if we have fewer than 18 bodies
+    Do While i <= 18
+        Me.Controls("header_" & i).Caption = ""
+        Me.Controls("sidebar_" & i).Caption = ""
+        i = i + 1
+    Loop
+    
+    rs.Close
+    Set db = Nothing
+    
+    Debug.Print "Grid headers populated successfully"
+    
+    Exit Sub
+    
+ErrorHandler:
+    Debug.Print "Error in PopulateGridHeaders: " & Err.Description
+    If Not rs Is Nothing Then
+        rs.Close
+        Set rs = Nothing
+    End If
+    Set db = Nothing
+End Sub
+
+
+Private Sub PopulateAspectGrid()
+    On Error GoTo ErrorHandler
+    
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    Dim rsBodyMap As DAO.Recordset
+    Dim sql As String
+    Dim i As Integer, j As Integer
+    
+    ' First, clear all grid cells
+    For i = 1 To 18
+        For j = 1 To 18
+            Me.Controls("cell_" & i & "_" & j).value = ""
+            ' Reset to default white background
+            Me.Controls("cell_" & i & "_" & j).backColor = RGB(255, 255, 255)
+        Next j
+    Next i
+    
+    Set db = CurrentDb()
+    
+    ' Create a mapping from BodyID to DisplayOrder position
+    Dim bodyPositions As New Collection
+    sql = "SELECT BodyID, DisplayOrder FROM tblCelestialBodies WHERE IsActive = True ORDER BY DisplayOrder"
+    Set rsBodyMap = db.OpenRecordset(sql, dbOpenSnapshot)
+    
+    Dim pos As Integer
+    pos = 1
+    Do While Not rsBodyMap.EOF And pos <= 18
+        bodyPositions.Add pos, CStr(rsBodyMap!BodyID)
+        Debug.Print "Body mapping: BodyID " & rsBodyMap!BodyID & " -> Position " & pos
+        rsBodyMap.MoveNext
+        pos = pos + 1
+    Loop
+    rsBodyMap.Close
+    
+    ' Get aspects for this chart with aspect type info
+    sql = "SELECT ca.*, asp.Symbol AS AspectSymbol, asp.AspectType " & _
+          "FROM tblChartAspects ca " & _
+          "INNER JOIN tblAspects asp ON ca.AspectID = asp.AspectID " & _
+          "WHERE ca.ChartID = " & m_ChartID
+    
+    Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
+    
+    Do While Not rs.EOF
+        Dim body1Pos As Integer, body2Pos As Integer
+        Dim aspectText As String
+        Dim degrees As Integer
+        Dim cellColor As Long
+        
+        ' Get positions for both bodies
+        On Error Resume Next
+        body1Pos = bodyPositions(CStr(rs!body1ID))
+        body2Pos = bodyPositions(CStr(rs!body2ID))
+        On Error GoTo ErrorHandler
+        
+        If body1Pos > 0 And body2Pos > 0 And body1Pos <= 18 And body2Pos <= 18 Then
+            
+            degrees = Round(rs!ExactDegree)
+            
+             ' Split exact degree into degrees and minutes
+            Dim wholeDegrees As Integer, minutes As Integer
+            wholeDegrees = Int(rs!ExactDegree)
+            minutes = Round((rs!ExactDegree - wholeDegrees) * 60)
+            
+            ' Format: Symbol + "  " + Degrees + A/S + Minutes
+            aspectText = Nz(rs!aspectSymbol, "?") & " " & _
+                        wholeDegrees & _
+                        IIf(rs!OrbitApplying, "A", "S") & _
+                        Format(minutes, "00")
+            
+            ' Set color based on aspect type
+            Select Case UCase(Nz(rs!aspectType, ""))
+                Case "MAJOR"
+                    cellColor = RGB(255, 240, 240)  ' Light red for major aspects
+                Case "MINOR"
+                    cellColor = RGB(240, 255, 240)  ' Light green for minor aspects
+                Case Else
+                    cellColor = RGB(240, 240, 255)  ' Light blue for other aspects
+            End Select
+            
+            ' Populate both cells (aspect works both ways)
+            Me.Controls("cell_" & body1Pos & "_" & body2Pos).value = aspectText
+            Me.Controls("cell_" & body1Pos & "_" & body2Pos).backColor = cellColor
+            
+            Me.Controls("cell_" & body2Pos & "_" & body1Pos).value = aspectText
+            Me.Controls("cell_" & body2Pos & "_" & body1Pos).backColor = cellColor
+            
+            Debug.Print "Aspect: Body " & rs!body1ID & " (pos " & body1Pos & ") " & _
+                       rs!aspectSymbol & " Body " & rs!body2ID & " (pos " & body2Pos & ") = " & aspectText & _
+                       " (" & Nz(rs!aspectType, "Unknown") & ")"
+        End If
+        
+        rs.MoveNext
+    Loop
+    
+    rs.Close
+    Set db = Nothing
+    
+    Debug.Print "Aspect grid populated successfully with color coding"
+    
+    Exit Sub
+    
+ErrorHandler:
+    Debug.Print "Error in PopulateAspectGrid: " & Err.Description
+    If Not rs Is Nothing Then
+        rs.Close
+        Set rs = Nothing
+    End If
+    If Not rsBodyMap Is Nothing Then
+        rsBodyMap.Close
+        Set rsBodyMap = Nothing
+    End If
+    Set db = Nothing
+End Sub
+
+
+Private Sub FormatGridCells()
+    On Error GoTo ErrorHandler
+    
+    Dim i As Integer, j As Integer
+    Dim cellControl As Control
+    
+    ' Format all grid cells (these are TextBox controls)
+    For i = 1 To 18
+        For j = 1 To 18
+            Set cellControl = Me.Controls("cell_" & i & "_" & j)
+            
+            With cellControl
+                ' Set font properties
+                .FontName = "Arial"      ' Sans-serif font
+                .FontSize = 8
+                .TextAlign = 2           ' Center alignment
+                .FontWeight = 400        ' Normal weight
+                
+                ' Set background and border
+                .BackStyle = 1           ' Normal (opaque)
+                .backColor = RGB(255, 255, 255)  ' White background
+                .BorderStyle = 1         ' Solid border
+                .BorderWidth = 1         ' Thin border
+                .BorderColor = RGB(192, 192, 192)  ' Light gray border
+                .ForeColor = RGB(0, 0, 0)          ' Black text
+                
+                ' Make read-only for display
+                .Locked = True
+                .TabStop = False
+            End With
+        Next j
+    Next i
+    
+    Debug.Print "Grid cells formatted successfully"
+    
+    Exit Sub
+    
+ErrorHandler:
+    Debug.Print "Error in FormatGridCells: " & Err.Description & " at cell " & i & "_" & j
+End Sub
+
+Private Sub FormatGridHeaders()
+    On Error GoTo ErrorHandler
+    
+    Dim i As Integer
+    Dim headerControl As Control
+    
+    ' Format headers (these are Label controls, not TextBox controls)
+    For i = 1 To 18
+        ' Horizontal headers
+        
+        Set headerControl = Me.Controls("header_" & i)
+        With headerControl
+            .FontName = "Calibri"
+            .FontSize = 14
+            .FontWeight = 550        ' Bold
+            .TextAlign = 2           ' Center alignment
+            .BackStyle = 1           ' Normal (opaque)
+            .backColor = RGB(240, 240, 240)  ' Light gray background
+            .ForeColor = RGB(0, 0, 0)        ' BLACK TEXT - explicitly set
+            .BorderStyle = 1         ' Solid border
+            .BorderWidth = 1         ' Thin border
+            .BorderColor = RGB(128, 128, 128)  ' Gray border
+        End With
+        
+        ' Vertical headers
+        Set headerControl = Me.Controls("sidebar_" & i)
+        With headerControl
+            .FontName = "Calibri"
+            .FontSize = 14
+            .FontWeight = 550        ' Bold
+            .TextAlign = 2           ' Center alignment
+            .BackStyle = 1           ' Normal (opaque)
+            .backColor = RGB(240, 240, 240)  ' Light gray background
+            .ForeColor = RGB(0, 0, 0)        ' Black text
+            .BorderStyle = 1         ' Solid border
+            .BorderWidth = 1         ' Thin border
+            .BorderColor = RGB(128, 128, 128)  ' Gray border
+        End With
+    Next i
+    
+    Debug.Print "Grid headers formatted successfully"
+    
+    Exit Sub
+    
+ErrorHandler:
+    Debug.Print "Error in FormatGridHeaders: " & Err.Description & " at header " & i
+End Sub
+
+Private Sub btnDiagnostic_Click()
+    Dim i As Integer
+    Dim headerControl As Control
+    
+    ' Check the formatting of each header
+    For i = 1 To 6  ' Just check first 6 headers
+        Set headerControl = Me.Controls("header_" & i)
+        Debug.Print "Header " & i & ": Caption=" & headerControl.Caption & _
+                   ", ForeColor=" & headerControl.ForeColor & _
+                   ", FontWeight=" & headerControl.FontWeight & _
+                   ", FontName=" & headerControl.FontName
+    Next i
+End Sub
+
+
+Private Sub ParseOpenArgs()
+    If IsNull(Me.openArgs) Or Len(Me.openArgs) = 0 Then Exit Sub
+    
+    Dim args() As String
+    Dim i As Integer
+    
+    args = Split(Me.openArgs, "|")
+    
+    For i = 0 To UBound(args)
+        If InStr(args(i), "=") > 0 Then
+            Dim keyValue() As String
+            keyValue = Split(args(i), "=")
+            
+            Select Case keyValue(0)
+                Case "PersonID"
+                    m_PersonID = CLng(keyValue(1))
+                Case "EventID"
+                    m_EventID = CLng(keyValue(1))
+                Case "SessionID"
+                    m_SessionID = CLng(keyValue(1))
+                Case "ChartType"
+                    m_CurrentChartType = keyValue(1)
+                    Me.cboChartType = keyValue(1)
+            End Select
+        End If
+    Next i
+End Sub
+
+Private Sub LoadSelectedChart()
+    If m_CurrentChartType = "" Then Exit Sub
+    
+    If modCharts.IsNatalChartType(m_CurrentChartType) Then
+        ' This shouldn't happen on frmAspectGrid, but handle gracefully
+        LoadSingleChart m_CurrentChartType
+    Else
+        LoadTransitChart m_CurrentChartType
+    End If
+End Sub
+
+Private Sub LoadSingleChart(chartType As String)
+    ' Handle individual natal charts on the full grid (rare case)
+    On Error GoTo ErrorHandler
+    
+    ' For now, just show a message since this should normally use half-grid
+    MsgBox "Individual charts should use the half-grid view. Switching forms...", vbInformation
+    
+    ' Switch to appropriate form
+    Dim openArgs As String
+    openArgs = "PersonID=" & m_PersonID & "|EventID=" & m_EventID & "|SessionID=" & m_SessionID & _
+               "|ChartType=" & chartType
+    
+    DoCmd.OpenForm "frmAspectHalfGrid", acNormal, , , , , openArgs
+    DoCmd.Close acForm, Me.name
+    
+    Exit Sub
+    
+ErrorHandler:
+    MsgBox "Error loading single chart: " & Err.Description, vbCritical
+End Sub
+
+Private Sub LoadTransitChart(selectedType As String)
+    ' Clear current grid
+    ClearAspectGrid
+    
+    ' Generate and load transit chart
+    Dim transitType As String
+    transitType = GetTransitTypeFromSelection(selectedType)
+    
+    If transitType <> "" Then
+        ' Generate the transit chart
+        If GenerateTransitChartEx(transitType, m_PersonID, m_EventID, m_SessionID) Then
+            ' Load the results into the grid
+            LoadTransitAspectGrid transitType, m_PersonID, m_EventID, m_SessionID
+        Else
+            MsgBox "Failed to generate transit chart for: " & selectedType, vbExclamation
+        End If
+    End If
+End Sub
+
+
+Private Function GetTransitTypeFromSelection(selectedType As String) As String
+    Select Case selectedType
+        Case "Event to Session Transit"
+            GetTransitTypeFromSelection = modTransitChart.TRANSIT_EVENT_SESSION
+        Case "Viewer Natal to Event Transit"
+            GetTransitTypeFromSelection = modTransitChart.TRANSIT_VIEWER_EVENT
+        Case "Viewer Natal to Session Transit"
+            GetTransitTypeFromSelection = modTransitChart.TRANSIT_VIEWER_SESSION
+        Case "Reference to Viewer Natal Transit"
+            GetTransitTypeFromSelection = modTransitChart.TRANSIT_REF_VIEWER
+        Case "Reference to Event Transit"
+            GetTransitTypeFromSelection = modTransitChart.TRANSIT_REF_EVENT
+        Case "Reference to Session Transit"
+            GetTransitTypeFromSelection = modTransitChart.TRANSIT_REF_SESSION
+        Case Else
+            GetTransitTypeFromSelection = ""
+    End Select
+End Function
+
+
+' Function to load transit aspects into the grid
+Private Sub LoadTransitAspectGrid(transitType As String, PersonID As Long, EventID As Long, SessionID As Long)
+    On Error GoTo ErrorHandler
+    
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    Dim sql As String
+    
+    Set db = CurrentDb()
+    
+    ' Get the transit aspects for this combination
+    sql = "SELECT ta.*, " & _
+          "cb1.Symbol AS TransitSymbol, cb1.DisplayOrder AS TransitOrder, " & _
+          "cb2.Symbol AS BaseSymbol, cb2.DisplayOrder AS BaseOrder, " & _
+          "asp.Symbol AS AspectSymbol " & _
+          "FROM ((tblTransitAspects ta " & _
+          "INNER JOIN tblCelestialBodies cb1 ON ta.TransitBodyID = cb1.BodyID) " & _
+          "INNER JOIN tblCelestialBodies cb2 ON ta.BaseBodyID = cb2.BodyID) " & _
+          "INNER JOIN tblAspects asp ON ta.AspectID = asp.AspectID " & _
+          "WHERE ta.PersonID = " & PersonID & " AND ta.EventID = " & EventID & _
+          " AND ta.SessionID = " & SessionID & " AND ta.TransitType = '" & transitType & "' " & _
+          "ORDER BY cb2.DisplayOrder, cb1.DisplayOrder"
+    
+    Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
+    
+    ' Populate the grid
+    Do While Not rs.EOF
+        Dim row As Integer, col As Integer
+        row = rs!BaseOrder  ' Base planets on rows (Y-axis)
+        col = rs!TransitOrder  ' Transit planets on columns (X-axis)
+        
+        ' Populate the cell
+        Dim controlName As String
+        controlName = "txt" & Format(row, "00") & Format(col, "00")
+        
+        On Error Resume Next
+        Me.Controls(controlName) = rs!aspectSymbol & vbCrLf & Format(rs!ExactDegree, "0.0")
+        On Error GoTo ErrorHandler
+        
+        rs.MoveNext
+    Loop
+    
+    ' Set up axis labels (you'll need to implement this based on your form design)
+    SetupTransitGridLabels transitType, PersonID, EventID, SessionID
+    
+CleanExit:
+    On Error Resume Next
+    rs.Close
+    Set rs = Nothing
+    Set db = Nothing
+    Exit Sub
+    
+ErrorHandler:
+    MsgBox "Error loading transit grid: " & Err.Description, vbCritical
+    Resume CleanExit
+End Sub
+
+Private Sub SetupTransitGridLabels(transitType As String, PersonID As Long, EventID As Long, SessionID As Long)
+    ' Set up row and column labels for transit grid
+    ' Implementation depends on your form's label controls
+    ' This is a placeholder - you'll need to customize based on your form design
+    
+    On Error Resume Next
+    
+    ' Example: If you have label controls for rows and columns
+    ' Me.lblRow01.Caption = "Sun"
+    ' Me.lblCol01.Caption = "Sun"
+    ' etc.
+    
+    ' For now, just update the form title to show what transit type is displayed
+    If Not IsNull(Me.Caption) Then
+        Me.Caption = "Transit Chart - " & Replace(transitType, "_", " ")
+    End If
+    
+    On Error GoTo 0
+End Sub
+
