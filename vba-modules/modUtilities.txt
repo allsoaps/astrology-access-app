@@ -115,7 +115,7 @@ End Function
     '— returns sessionID of an existing viewer/event matching all key fields, or 0 if none
 Public Function FindSessionID( _
     PersonID As String, _
-    EventID As String _
+    eventID As String _
 ) As Long
 
   Dim db  As DAO.Database
@@ -125,7 +125,7 @@ Public Function FindSessionID( _
   Set db = CurrentDb()
   sql = "SELECT SessionID FROM tblSessions WHERE " & _
         "PersonID=" & PersonID & " AND " & _
-        "EventID=" & EventID
+        "EventID=" & eventID
 
   Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
   If Not rs.EOF Then FindSessionID = rs!SessionID

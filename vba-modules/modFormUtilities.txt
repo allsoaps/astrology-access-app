@@ -156,20 +156,20 @@ ErrorHandler:
 End Function
 
 ' Function to get event name for display
-Public Function GetEventName(EventID As Long) As String
+Public Function GetEventName(eventID As Long) As String
     Dim db As DAO.Database
     Dim rs As DAO.Recordset
     Dim sql As String
     
     On Error GoTo ErrorHandler
     
-    If EventID = 0 Then
+    If eventID = 0 Then
         GetEventName = ""
         Exit Function
     End If
     
     Set db = CurrentDb()
-    sql = "SELECT EventName, EventDate FROM tblEvents WHERE EventID = " & EventID
+    sql = "SELECT EventName, EventDate FROM tblEvents WHERE EventID = " & eventID
     Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
     
     If Not rs.EOF Then
@@ -198,8 +198,8 @@ Public Function PersonHasNatalChart(PersonID As Long) As Boolean
 End Function
 
 ' Function to check if an event has a chart
-Public Function EventHasChart(EventID As Long) As Boolean
-    EventHasChart = (modChartCalculation.GetChartID("Event", , EventID) > 0)
+Public Function EventHasChart(eventID As Long) As Boolean
+    EventHasChart = (modChartCalculation.GetChartID("Event", , eventID) > 0)
 End Function
 
 ' Function to check if a session has a chart

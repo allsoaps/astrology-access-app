@@ -153,12 +153,12 @@ Private Sub btnViewAssociatedImpressions_Click()
     
     ' Get the PersonID and EventID from current subform row
     Dim PersonID As Long
-    Dim EventID As Long
+    Dim eventID As Long
     
     PersonID = Me.subResults.Form.Controls("PersonID")
-    EventID = Me.subResults.Form.Controls("EventID")
+    eventID = Me.subResults.Form.Controls("EventID")
     
-    If PersonID = 0 Or EventID = 0 Then
+    If PersonID = 0 Or eventID = 0 Then
         MsgBox "Invalid selection. Please select a valid row.", vbExclamation, "Invalid Selection"
         Exit Sub
     End If
@@ -168,7 +168,7 @@ Private Sub btnViewAssociatedImpressions_Click()
     Dim hasImpressions As Boolean
     Dim SessionID As Long
     
-    SessionID = GetSessionID(PersonID, EventID)
+    SessionID = GetSessionID(PersonID, eventID)
     sessionExists = (SessionID > 0)
     
     If sessionExists Then
@@ -245,7 +245,7 @@ Private Sub RefreshCurrentSearch()
     End If
 End Sub
 
-Private Function GetSessionID(PersonID As Long, EventID As Long) As Long
+Private Function GetSessionID(PersonID As Long, eventID As Long) As Long
     ' PURPOSE: Get SessionID for the specified viewer and event
     ' CALLED FROM: btnViewAssociatedImpressions_Click
     ' PARAMETERS: PersonID and EventID
@@ -258,7 +258,7 @@ Private Function GetSessionID(PersonID As Long, EventID As Long) As Long
     Dim sql As String
     
     Set db = CurrentDb()
-    sql = "SELECT SessionID FROM tblSessions WHERE PersonID = " & PersonID & " AND EventID = " & EventID
+    sql = "SELECT SessionID FROM tblSessions WHERE PersonID = " & PersonID & " AND EventID = " & eventID
     Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
     
     If Not rs.EOF Then
@@ -401,7 +401,7 @@ ErrorHandler:
     MsgBox "Error: " & Err.Description, vbCritical
 End Sub
 
-Private Sub SearchByEvent(EventID As Long)
+Private Sub SearchByEvent(eventID As Long)
     ' PURPOSE: EVENT MODE - Show all assigned viewers for the selected event with their session status
     ' CALLED FROM: btnSearch_Click when event is selected
     ' PARAMETERS: EventID - The EventID of the selected event
@@ -412,7 +412,7 @@ Private Sub SearchByEvent(EventID As Long)
     Dim sql As String
     sql = "SELECT " & _
           "p.PersonID, " & _
-          EventID & " AS EventID, " & _
+          eventID & " AS EventID, " & _
           "p.LastName & ', ' & p.FirstName AS ViewerName, " & _
           "IIf(s.SessionDate IS NULL, 'blank', Format(s.SessionDate,'mm/dd/yyyy')) AS SessionDate, " & _
           "IIf(s.SessionID IS NULL, '0', " & _
@@ -427,8 +427,8 @@ Private Sub SearchByEvent(EventID As Long)
           "'EVENT' AS DisplayMode " & _
           "FROM tblPeople p " & _
           "INNER JOIN tblAssignments a ON p.PersonID = a.PersonID " & _
-          "LEFT JOIN tblSessions s ON p.PersonID = s.PersonID AND s.EventID = " & EventID & " " & _
-          "WHERE a.EventID = " & EventID & " " & _
+          "LEFT JOIN tblSessions s ON p.PersonID = s.PersonID AND s.EventID = " & eventID & " " & _
+          "WHERE a.EventID = " & eventID & " " & _
           "ORDER BY p.LastName, p.FirstName"
     
     ' Set the subform's RecordSource directly
@@ -440,7 +440,7 @@ Private Sub SearchByEvent(EventID As Long)
     Dim eventName As String
     
     Set db = CurrentDb()
-    Set rs = db.OpenRecordset("SELECT EventName, EventDate FROM tblEvents WHERE EventID = " & EventID, dbOpenSnapshot)
+    Set rs = db.OpenRecordset("SELECT EventName, EventDate FROM tblEvents WHERE EventID = " & eventID, dbOpenSnapshot)
     
     If Not rs.EOF Then
         Dim eventDisplay As String

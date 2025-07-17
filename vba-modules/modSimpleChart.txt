@@ -24,8 +24,6 @@ Public Function GenerateNatalChart(PersonID As Long) As Boolean
     
     On Error GoTo ErrorHandler
     
-    Debug.Print "Starting natal chart generation for PersonID: " & PersonID
-    
     Set db = CurrentDb()
     
     ' Get person's birth data
@@ -50,10 +48,6 @@ Public Function GenerateNatalChart(PersonID As Long) As Boolean
     
     rs.Close
     
-    Debug.Print "Birth Date: " & BirthDate
-    Debug.Print "Birth Time: " & BirthTime
-    Debug.Print "Location: " & latitude & ", " & longitude
-    
     ' Check if natal chart already exists
     chartID = GetExistingNatalChart(PersonID)
     If chartID > 0 Then
@@ -77,7 +71,6 @@ Public Function GenerateNatalChart(PersonID As Long) As Boolean
     combinedDateTime = BirthDate + timeValue(Format(BirthTime, "hh:nn:ss"))
     julianDay = modUtilities.DateToJulianDay(combinedDateTime)
     
-    Debug.Print "Julian Day: " & julianDay
     
     ' Create chart record
     chartID = CreateChartRecord(PersonID, "Natal", BirthDate, BirthTime, LocationID)
@@ -87,7 +80,6 @@ Public Function GenerateNatalChart(PersonID As Long) As Boolean
         Exit Function
     End If
     
-    Debug.Print "Created chart record with ChartID: " & chartID
     
     ' Calculate and save planetary positions
     If Not CalculateAndSavePlanets(chartID, julianDay, latitude, longitude) Then
@@ -117,7 +109,6 @@ Public Function GenerateNatalChart(PersonID As Long) As Boolean
     ' Update person record to mark natal chart as generated
     db.Execute "UPDATE tblPeople SET NatalChartGenerated = True, DateUpdated = Now() WHERE PersonID = " & PersonID
     
-    Debug.Print "Natal chart generation completed successfully!"
     GenerateNatalChart = True
     
     Set rs = Nothing
@@ -177,15 +168,12 @@ Private Function DeleteExistingChart(chartID As Long) As Boolean
     ' Delete in correct order due to foreign key constraints
     ' Delete aspects first (they reference ChartID)
     db.Execute "DELETE FROM tblChartAspects WHERE ChartID = " & chartID
-    Debug.Print "Deleted existing aspects for ChartID: " & chartID
     
     ' Delete positions next (they reference ChartID)
     db.Execute "DELETE FROM tblChartPositions WHERE ChartID = " & chartID
-    Debug.Print "Deleted existing positions for ChartID: " & chartID
     
     ' Delete chart record last
     db.Execute "DELETE FROM tblCharts WHERE ChartID = " & chartID
-    Debug.Print "Deleted existing chart record: " & chartID
     
     DeleteExistingChart = True
     Set db = Nothing
@@ -211,7 +199,7 @@ Private Function CreateChartRecord(PersonID As Long, chartType As String, ChartD
         !PersonID = PersonID
         ' Check if EventID and SessionID fields exist and are required
         On Error Resume Next
-        !EventID = Null
+        !eventID = Null
         !SessionID = Null
         On Error GoTo ErrorHandler
         !chartType = chartType
@@ -227,7 +215,6 @@ Private Function CreateChartRecord(PersonID As Long, chartType As String, ChartD
     rs.Bookmark = rs.LastModified
     CreateChartRecord = rs!chartID
     
-    Debug.Print "Chart record created with ChartID: " & CreateChartRecord
     
     rs.Close
     Set rs = Nothing
@@ -256,7 +243,6 @@ Private Function CalculateAndSaveAngles(chartID As Long, julianDay As Double, la
     Set db = CurrentDb()
     Set rs = db.OpenRecordset("tblChartPositions", dbOpenDynaset)
     
-    Debug.Print "Calculating house angles..."
     
     ' Get Ascendant and Midheaven using existing function
     houseResult = modSwissItems.GetAscendantMidheaven(julianDay, lat, lng)
@@ -269,11 +255,6 @@ Private Function CalculateAndSaveAngles(chartID As Long, julianDay As Double, la
         midheaven = houseResult(1)
         descendant = NormalizeDegrees(ascendant + 180)
         imumCoeli = NormalizeDegrees(midheaven + 180)
-        
-        Debug.Print "  Ascendant: " & Format(ascendant, "0.00") & "°"
-        Debug.Print "  Midheaven: " & Format(midheaven, "0.00") & "°"
-        Debug.Print "  Descendant: " & Format(descendant, "0.00") & "°"
-        Debug.Print "  Imum Coeli: " & Format(imumCoeli, "0.00") & "°"
         
         ' Save Ascendant
         rs.AddNew
@@ -372,7 +353,7 @@ Private Function GetSignFromLongitude(longitude As Double) As Long
 End Function
 
 
-Public Function GenerateEventChart(EventID As Long) As Boolean
+Public Function GenerateEventChart(eventID As Long) As Boolean
     Dim db As DAO.Database
     Dim rs As DAO.Recordset
     Dim sql As String
@@ -392,19 +373,17 @@ Public Function GenerateEventChart(EventID As Long) As Boolean
     
     On Error GoTo ErrorHandler
     
-    Debug.Print "Starting event chart generation for EventID: " & EventID
-    
     Set db = CurrentDb()
     
     ' Get event data
     sql = "SELECT e.EventName, e.EventDate, e.EventTime, e.LocationID, l.Latitude, l.Longitude " & _
           "FROM tblEvents e INNER JOIN tblLocations l ON e.LocationID = l.LocationID " & _
-          "WHERE e.EventID = " & EventID
+          "WHERE e.EventID = " & eventID
     
     Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
     
     If rs.EOF Then
-        Debug.Print "Error: Event not found with ID " & EventID
+        Debug.Print "Error: Event not found with ID " & eventID
         GenerateEventChart = False
         Exit Function
     End If
@@ -419,13 +398,8 @@ Public Function GenerateEventChart(EventID As Long) As Boolean
     
     rs.Close
     
-    Debug.Print "Event Name: " & eventName
-    Debug.Print "Event Date: " & eventDate
-    Debug.Print "Event Time: " & eventTime
-    Debug.Print "Location: " & latitude & ", " & longitude
-    
     ' Check if event chart already exists
-    chartID = GetExistingEventChart(EventID)
+    chartID = GetExistingEventChart(eventID)
     If chartID > 0 Then
         Debug.Print "Event chart already exists with ChartID: " & chartID
         Debug.Print "Deleting existing chart..."
@@ -447,17 +421,14 @@ Public Function GenerateEventChart(EventID As Long) As Boolean
     combinedDateTime = eventDate + timeValue(Format(eventTime, "hh:nn:ss"))
     julianDay = modUtilities.DateToJulianDay(combinedDateTime)
     
-    Debug.Print "Julian Day: " & julianDay
     
     ' Create chart record for event
-    chartID = CreateEventChartRecord(EventID, "Event", eventDate, eventTime, LocationID)
+    chartID = CreateEventChartRecord(eventID, "Event", eventDate, eventTime, LocationID)
     If chartID = 0 Then
         Debug.Print "Error: Failed to create chart record"
         GenerateEventChart = False
         Exit Function
     End If
-    
-    Debug.Print "Created chart record with ChartID: " & chartID
     
     ' Calculate and save planetary positions
     If Not CalculateAndSavePlanets(chartID, julianDay, latitude, longitude) Then
@@ -483,10 +454,8 @@ Public Function GenerateEventChart(EventID As Long) As Boolean
     
     
     ' Update event record to mark chart as generated
-    db.Execute "UPDATE tblEvents SET EventChartGenerated = True, DateUpdated = Now() WHERE EventID = " & EventID
-    Debug.Print "Updated event record to mark chart as generated"
+    db.Execute "UPDATE tblEvents SET EventChartGenerated = True, DateUpdated = Now() WHERE EventID = " & eventID
     
-    Debug.Print "Event chart generation completed successfully!"
     GenerateEventChart = True
     
     Set rs = Nothing
@@ -503,7 +472,7 @@ ErrorHandler:
     Set db = Nothing
 End Function
 
-Private Function GetExistingEventChart(EventID As Long) As Long
+Private Function GetExistingEventChart(eventID As Long) As Long
     Dim db As DAO.Database
     Dim rs As DAO.Recordset
     Dim sql As String
@@ -511,7 +480,7 @@ Private Function GetExistingEventChart(EventID As Long) As Long
     On Error GoTo ErrorHandler
     
     Set db = CurrentDb()
-    sql = "SELECT ChartID FROM tblCharts WHERE EventID = " & EventID & " AND ChartType = 'Event'"
+    sql = "SELECT ChartID FROM tblCharts WHERE EventID = " & eventID & " AND ChartType = 'Event'"
     Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
     
     If Not rs.EOF Then
@@ -534,7 +503,7 @@ ErrorHandler:
     Set db = Nothing
 End Function
 
-Private Function CreateEventChartRecord(EventID As Long, chartType As String, ChartDate As Date, ChartTime As Date, LocationID As Long) As Long
+Private Function CreateEventChartRecord(eventID As Long, chartType As String, ChartDate As Date, ChartTime As Date, LocationID As Long) As Long
     Dim db As DAO.Database
     Dim rs As DAO.Recordset
     
@@ -549,7 +518,7 @@ Private Function CreateEventChartRecord(EventID As Long, chartType As String, Ch
         On Error Resume Next
         !PersonID = Null
         On Error GoTo ErrorHandler
-        !EventID = EventID
+        !eventID = eventID
         ' Set SessionID to Null for event charts
         On Error Resume Next
         !SessionID = Null
@@ -566,8 +535,6 @@ Private Function CreateEventChartRecord(EventID As Long, chartType As String, Ch
     ' Get the ChartID that was just created
     rs.Bookmark = rs.LastModified
     CreateEventChartRecord = rs!chartID
-    
-    Debug.Print "Event chart record created with ChartID: " & CreateEventChartRecord
     
     rs.Close
     Set rs = Nothing
@@ -606,8 +573,6 @@ Public Function GenerateSessionChart(SessionID As Long) As Boolean
     
     On Error GoTo ErrorHandler
     
-    Debug.Print "Starting session chart generation for SessionID: " & SessionID
-    
     Set db = CurrentDb()
     
     ' Get session data
@@ -632,10 +597,6 @@ Public Function GenerateSessionChart(SessionID As Long) As Boolean
     
     rs.Close
     
-    Debug.Print "Session Date: " & sessionDate
-    Debug.Print "Session Time: " & sessionTime
-    Debug.Print "Location: " & latitude & ", " & longitude
-    
     ' Check if session chart already exists
     chartID = GetExistingSessionChart(SessionID)
     If chartID > 0 Then
@@ -659,8 +620,6 @@ Public Function GenerateSessionChart(SessionID As Long) As Boolean
     combinedDateTime = sessionDate + timeValue(Format(sessionTime, "hh:nn:ss"))
     julianDay = modUtilities.DateToJulianDay(combinedDateTime)
     
-    Debug.Print "Julian Day: " & julianDay
-    
     ' Create chart record for session
     chartID = CreateSessionChartRecord(SessionID, "Session", sessionDate, sessionTime, LocationID)
     If chartID = 0 Then
@@ -668,8 +627,6 @@ Public Function GenerateSessionChart(SessionID As Long) As Boolean
         GenerateSessionChart = False
         Exit Function
     End If
-    
-    Debug.Print "Created chart record with ChartID: " & chartID
     
     ' Calculate and save planetary positions
     If Not CalculateAndSavePlanets(chartID, julianDay, latitude, longitude) Then
@@ -694,9 +651,7 @@ Public Function GenerateSessionChart(SessionID As Long) As Boolean
     
     ' Update session record to mark chart as generated
     db.Execute "UPDATE tblSessions SET SessionChartGenerated = True, DateUpdated = Now() WHERE SessionID = " & SessionID
-    Debug.Print "Updated session record to mark chart as generated"
     
-    Debug.Print "Session chart generation completed successfully!"
     GenerateSessionChart = True
     
     Set rs = Nothing
@@ -758,7 +713,7 @@ Private Function CreateSessionChartRecord(SessionID As Long, chartType As String
         ' Set PersonID and EventID to Null for session charts
         On Error Resume Next
         !PersonID = Null
-        !EventID = Null
+        !eventID = Null
         On Error GoTo ErrorHandler
         !SessionID = SessionID
         !chartType = chartType
@@ -773,8 +728,6 @@ Private Function CreateSessionChartRecord(SessionID As Long, chartType As String
     ' Get the ChartID that was just created
     rs.Bookmark = rs.LastModified
     CreateSessionChartRecord = rs!chartID
-    
-    Debug.Print "Session chart record created with ChartID: " & CreateSessionChartRecord
     
     rs.Close
     Set rs = Nothing
@@ -814,11 +767,7 @@ Private Function CalculateAndSavePlanets(chartID As Long, julianDay As Double, l
     Set rsPlanets = db.OpenRecordset(sql, dbOpenSnapshot)
     Set rs = db.OpenRecordset("tblChartPositions", dbOpenDynaset)
     
-    Debug.Print "Calculating planetary positions with full Swiss Ephemeris data..."
-    
     Do While Not rsPlanets.EOF
-        Debug.Print "Calculating " & rsPlanets!BodyName & " (SwissEphID: " & rsPlanets!swissEphID & ")"
-        
         ' Get complete planet data using enhanced Swiss Ephemeris function
         planetData = modSwissItems.GetCompletePlanetData(julianDay, rsPlanets!swissEphID)
 
@@ -855,11 +804,11 @@ Private Function CalculateAndSavePlanets(chartID As Long, julianDay As Double, l
             End With
             rs.Update
             
-            Debug.Print "  " & rsPlanets!BodyName & " at " & Format(longitude, "0.00") & "° " & _
-                       "(Sign " & GetSignFromLongitude(longitude) & ") " & _
-                       IIf(lonSpeed < 0, "[R] ", "") & _
-                       "Speed: " & Format(lonSpeed, "0.00") & "°/day " & _
-                       "Dist: " & Format(distance, "0.000") & "AU"
+'            Debug.Print "  " & rsPlanets!BodyName & " at " & Format(longitude, "0.00") & "° " & _
+'                       "(Sign " & GetSignFromLongitude(longitude) & ") " & _
+'                       IIf(lonSpeed < 0, "[R] ", "") & _
+'                       "Speed: " & Format(lonSpeed, "0.00") & "°/day " & _
+'                       "Dist: " & Format(distance, "0.000") & "AU"
         Else
             Debug.Print "  Failed to calculate " & rsPlanets!BodyName
         End If
@@ -947,11 +896,8 @@ Private Function CalculateAndSaveAspects(chartID As Long) As Boolean
     
     Set db = CurrentDb()
     
-    Debug.Print "Calculating aspects for ChartID: " & chartID
-    
     ' Check if we should use default orbs from tblAspects
     useDefaultOrbs = GetDefaultOrbsSetting()
-    Debug.Print "Using default orbs: " & useDefaultOrbs
     
     ' Get all planetary positions for this chart (planets, asteroids, nodes)
     sql = "SELECT cp.BodyID, cp.Longitude, cb.BodyName, cb.BodyType " & _
@@ -975,8 +921,6 @@ Private Function CalculateAndSaveAspects(chartID As Long) As Boolean
     
     ' Open recordset for saving aspects
     Set rsAspects = db.OpenRecordset("tblChartAspects", dbOpenDynaset)
-    
-    Debug.Print "=== CALCULATING PLANET-TO-PLANET ASPECTS ==="
     
     ' PART 1: Calculate Planet-to-Planet Aspects
     rsPlanets.MoveFirst
@@ -1004,8 +948,6 @@ Private Function CalculateAndSaveAspects(chartID As Long) As Boolean
         Set rsPlanets2 = Nothing
         rsPlanets.MoveNext
     Loop
-    
-    Debug.Print "=== CALCULATING PLANET-TO-ANGLE ASPECTS ==="
     
     ' PART 2: Calculate Planet-to-Angle Aspects
     rsPlanets.MoveFirst
@@ -1042,7 +984,6 @@ Private Function CalculateAndSaveAspects(chartID As Long) As Boolean
     Set rsAspects = Nothing
     Set db = Nothing
     
-    Debug.Print "Aspect calculation completed successfully!"
     Exit Function
     
 ErrorHandler:
@@ -1137,9 +1078,9 @@ Private Function GetEffectiveOrb(majorOrb As Double, minorOrb As Double, planet1
             GetEffectiveOrb = minorOrb
     End Select
     
-    Debug.Print "  Orb calculation: " & GetPlanetName(planet1ID) & " (rank " & planet1Rank & ") + " & _
-               GetPlanetName(planet2ID) & " (rank " & planet2Rank & ") = " & _
-               Format(GetEffectiveOrb, "0.0") & "° orb"
+'    Debug.Print "  Orb calculation: " & GetPlanetName(planet1ID) & " (rank " & planet1Rank & ") + " & _
+'               GetPlanetName(planet2ID) & " (rank " & planet2Rank & ") = " & _
+'               Format(GetEffectiveOrb, "0.0") & "° orb"
 End Function
 
 ' New function to assign planetary hierarchy ranks for orb calculations
@@ -1338,10 +1279,10 @@ Private Function IsAspectApplying(chartID As Long, body1ID As Long, body2ID As L
     ' If future difference is larger, aspect is separating
     IsAspectApplying = (futureDiffFromAspect < currentDiffFromAspect)
     
-    Debug.Print "    Applying/Separating analysis: " & GetPlanetName(body1ID) & " to " & GetPlanetName(body2ID)
-    Debug.Print "      Current diff from " & aspectAngle & "°: " & Format(currentDiffFromAspect, "0.00") & "°"
-    Debug.Print "      Future diff from " & aspectAngle & "°: " & Format(futureDiffFromAspect, "0.00") & "°"
-    Debug.Print "      Result: " & IIf(IsAspectApplying, "APPLYING", "SEPARATING")
+'    Debug.Print "    Applying/Separating analysis: " & GetPlanetName(body1ID) & " to " & GetPlanetName(body2ID)
+'    Debug.Print "      Current diff from " & aspectAngle & "°: " & Format(currentDiffFromAspect, "0.00") & "°"
+'    Debug.Print "      Future diff from " & aspectAngle & "°: " & Format(futureDiffFromAspect, "0.00") & "°"
+'    Debug.Print "      Result: " & IIf(IsAspectApplying, "APPLYING", "SEPARATING")
     
     Exit Function
     
@@ -1402,10 +1343,6 @@ Private Sub CalculateAspectsBetweenBodies(chartID As Long, body1ID As Long, long
             End With
             rsAspects.Update
             
-            Debug.Print "  Found " & rsAspectTypes!AspectName & " between " & _
-                       GetPlanetName(body1ID) & " and " & GetPlanetName(body2ID) & _
-                       " (orb: " & Format(ExactDegree, "0.00") & "°) [" & _
-                       IIf(IsApplying, "APPLYING", "SEPARATING") & "]"
         End If
         
         rsAspectTypes.MoveNext

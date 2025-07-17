@@ -52,7 +52,7 @@ ErrorHandler:
 End Sub
 
 
-Private Function GetEventChartID(EventID As Long) As Long
+Private Function GetEventChartID(eventID As Long) As Long
     Dim db As DAO.Database
     Dim rs As DAO.Recordset
     Dim sql As String
@@ -60,7 +60,7 @@ Private Function GetEventChartID(EventID As Long) As Long
     On Error GoTo ErrorHandler
     
     Set db = CurrentDb()
-    sql = "SELECT ChartID FROM tblCharts WHERE EventID = " & EventID & " AND ChartType = 'Event'"
+    sql = "SELECT ChartID FROM tblCharts WHERE EventID = " & eventID & " AND ChartType = 'Event'"
     Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
     
     If Not rs.EOF Then
@@ -85,7 +85,7 @@ ErrorHandler:
 End Function
 
 
-Private Function GetChartStatus(EventID As Long) As Boolean
+Private Function GetChartStatus(eventID As Long) As Boolean
     Dim db As DAO.Database
     Dim rs As DAO.Recordset
     Dim sql As String
@@ -93,7 +93,7 @@ Private Function GetChartStatus(EventID As Long) As Boolean
     On Error GoTo ErrorHandler
     
     Set db = CurrentDb()
-    sql = "SELECT EventChartGenerated FROM tblEvents WHERE EventID = " & EventID
+    sql = "SELECT EventChartGenerated FROM tblEvents WHERE EventID = " & eventID
     Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
     
     If Not rs.EOF Then
@@ -144,7 +144,7 @@ Private Sub Form_Load()
     m_FormLoading = False
 End Sub
 
-Private Sub LoadEventData(EventID As Long)
+Private Sub LoadEventData(eventID As Long)
     ' Load event data from database into unbound controls
     On Error GoTo LoadError
     
@@ -163,13 +163,13 @@ Private Sub LoadEventData(EventID As Long)
           "LEFT JOIN tblLocations AS l ON e.LocationID = l.LocationID) " & _
           "LEFT JOIN lu_Team AS ht ON e.Home = ht.ID) " & _
           "LEFT JOIN lu_Team AS vt ON e.Visitor = vt.ID " & _
-          "WHERE e.EventID = " & EventID & ";"
+          "WHERE e.EventID = " & eventID & ";"
           
     Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
     
     If Not rs.EOF Then
         ' Populate the form controls
-        Me.txtEventID.value = rs!EventID
+        Me.txtEventID.value = rs!eventID
         Me.txtEventName.value = Nz(rs!eventName, "")
         Me.cboEventType.value = Nz(rs!EventType, "")
         Me.dtEventDate.value = rs!eventDate

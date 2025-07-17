@@ -109,7 +109,7 @@ Private Sub BuildPlanetaryLabels(frm As Access.Form)
             Top:=top0 - boxH)             ' one cell-height above
         With lbl
             .name = "header_" & i
-            .Caption = rs!Symbol
+            .Caption = rs!symbol
             .Width = boxW
             .Height = boxH
             .TextAlign = 2
@@ -129,7 +129,7 @@ Private Sub BuildPlanetaryLabels(frm As Access.Form)
             Top:=top0 + (i - 1) * boxH)
         With lbl
             .name = "sidebar_" & i
-            .Caption = rs!Symbol
+            .Caption = rs!symbol
             .Width = boxW
             .Height = boxH
             .TextAlign = 2
@@ -213,7 +213,7 @@ Public Sub AddPlanetaryLabels()
             Top:=topPos - 25)
         With lbl
             .name = "header_" & i
-            .Caption = rs!Symbol
+            .Caption = rs!symbol
             .Width = boxW
             .Height = 20
             .TextAlign = 2
@@ -233,7 +233,7 @@ Public Sub AddPlanetaryLabels()
             Top:=topPos + (i - 1) * boxH)
         With lbl
             .name = "sidebar_" & i
-            .Caption = rs!Symbol
+            .Caption = rs!symbol
             .Width = 20
             .Height = boxH
             .TextAlign = 2
@@ -309,7 +309,7 @@ Public Sub PopulateAspectGrid(chartID As Long)
         If dict.Exists(rs!Body1) And dict.Exists(rs!Body2) Then
             b1 = dict(rs!Body1)
             b2 = dict(rs!Body2)
-            sym = rs!Symbol
+            sym = rs!symbol
             deg = rs!ExactDegree
             info = sym & " " & Format(deg, "0°")
             frm("cell_" & b1 & "_" & b2) = info

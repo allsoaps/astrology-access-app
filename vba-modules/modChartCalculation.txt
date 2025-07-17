@@ -14,7 +14,7 @@ Public Const CHART_TYPE_SESSION As String = "Session"
 Public Type ChartInputData
     chartType As String
     PersonID As Long        ' For Natal and Session charts
-    EventID As Long         ' For Event and Session charts
+    eventID As Long         ' For Event and Session charts
     SessionID As Long       ' For Session charts only
     LocationID As Long      ' Location for the chart
     ChartDate As Date       ' Date of the chart
@@ -151,12 +151,12 @@ Private Function ValidateChartInput(inputData As ChartInputData) As Boolean
                 Exit Function
             End If
         Case CHART_TYPE_EVENT
-            If inputData.EventID <= 0 Then
+            If inputData.eventID <= 0 Then
                 MsgBox "EventID is required for event charts", vbCritical
                 Exit Function
             End If
         Case CHART_TYPE_SESSION
-            If inputData.PersonID <= 0 Or inputData.EventID <= 0 Or inputData.SessionID <= 0 Then
+            If inputData.PersonID <= 0 Or inputData.eventID <= 0 Or inputData.SessionID <= 0 Then
                 MsgBox "PersonID, EventID, and SessionID are required for session charts", vbCritical
                 Exit Function
             End If
@@ -462,7 +462,7 @@ Private Function SaveChartToDatabase(inputData As ChartInputData, julianDay As D
     
     With rs
         If inputData.PersonID > 0 Then !PersonID = inputData.PersonID
-        If inputData.EventID > 0 Then !EventID = inputData.EventID
+        If inputData.eventID > 0 Then !eventID = inputData.eventID
         If inputData.SessionID > 0 Then !SessionID = inputData.SessionID
         !chartType = inputData.chartType
         !ChartDate = inputData.ChartDate
@@ -861,7 +861,7 @@ Public Function CreateNatalChart(PersonID As Long) As Long
     With inputData
         .chartType = CHART_TYPE_NATAL
         .PersonID = PersonID
-        .EventID = 0
+        .eventID = 0
         .SessionID = 0
         .LocationID = rs!LocationID
         .ChartDate = rs!BirthDate
@@ -884,7 +884,7 @@ ErrorHandler:
     Set db = Nothing
 End Function
 
-Public Function CreateEventChart(EventID As Long) As Long
+Public Function CreateEventChart(eventID As Long) As Long
     Dim inputData As ChartInputData
     Dim db As DAO.Database
     Dim rs As DAO.Recordset
@@ -893,10 +893,10 @@ Public Function CreateEventChart(EventID As Long) As Long
     
     ' Get event data
     Set db = CurrentDb()
-    Set rs = db.OpenRecordset("SELECT LocationID, EventDate, EventTime FROM tblEvents WHERE EventID = " & EventID, dbOpenSnapshot)
+    Set rs = db.OpenRecordset("SELECT LocationID, EventDate, EventTime FROM tblEvents WHERE EventID = " & eventID, dbOpenSnapshot)
     
     If rs.EOF Then
-        MsgBox "Event not found with ID: " & EventID, vbCritical
+        MsgBox "Event not found with ID: " & eventID, vbCritical
         CreateEventChart = 0
         Exit Function
     End If
@@ -904,7 +904,7 @@ Public Function CreateEventChart(EventID As Long) As Long
     With inputData
         .chartType = CHART_TYPE_EVENT
         .PersonID = 0
-        .EventID = EventID
+        .eventID = eventID
         .SessionID = 0
         .LocationID = rs!LocationID
         .ChartDate = rs!eventDate
@@ -947,7 +947,7 @@ Public Function CreateSessionChart(SessionID As Long) As Long
     With inputData
         .chartType = CHART_TYPE_SESSION
         .PersonID = rs!studentID  ' StudentID is the PersonID
-        .EventID = rs!EventID
+        .eventID = rs!eventID
         .SessionID = SessionID
         .LocationID = rs!LocationID
         .ChartDate = rs!sessionDate
@@ -971,7 +971,7 @@ ErrorHandler:
 End Function
 
 ' Function to check if a chart already exists
-Public Function chartExists(chartType As String, Optional PersonID As Long = 0, Optional EventID As Long = 0, Optional SessionID As Long = 0) As Long
+Public Function chartExists(chartType As String, Optional PersonID As Long = 0, Optional eventID As Long = 0, Optional SessionID As Long = 0) As Long
     Dim db As DAO.Database
     Dim rs As DAO.Recordset
     Dim sql As String
@@ -986,7 +986,7 @@ Public Function chartExists(chartType As String, Optional PersonID As Long = 0, 
         Case CHART_TYPE_NATAL
             sql = sql & " AND PersonID = " & PersonID
         Case CHART_TYPE_EVENT
-            sql = sql & " AND EventID = " & EventID
+            sql = sql & " AND EventID = " & eventID
         Case CHART_TYPE_SESSION
             sql = sql & " AND SessionID = " & SessionID
     End Select
@@ -1049,8 +1049,8 @@ ErrorHandler:
 End Function
 
 ' Function to get chart ID for display purposes
-Public Function GetChartID(chartType As String, Optional PersonID As Long = 0, Optional EventID As Long = 0, Optional SessionID As Long = 0) As Long
-    GetChartID = chartExists(chartType, PersonID, EventID, SessionID)
+Public Function GetChartID(chartType As String, Optional PersonID As Long = 0, Optional eventID As Long = 0, Optional SessionID As Long = 0) As Long
+    GetChartID = chartExists(chartType, PersonID, eventID, SessionID)
 End Function
 
 ' Aspect Orbs Configuration Integration
@@ -1110,11 +1110,11 @@ Public Function GenerateNatalChartForStudent(PersonID As Long) As Boolean
     End If
 End Function
 
-Public Function GenerateEventChartForEvent(EventID As Long) As Boolean
+Public Function GenerateEventChartForEvent(eventID As Long) As Boolean
     Dim chartID As Long
     
     ' Check if chart already exists
-    chartID = chartExists(CHART_TYPE_EVENT, , EventID)
+    chartID = chartExists(CHART_TYPE_EVENT, , eventID)
     
     If chartID > 0 Then
         ' Chart already exists, ask user if they want to regenerate
@@ -1131,7 +1131,7 @@ Public Function GenerateEventChartForEvent(EventID As Long) As Boolean
     End If
     
     ' Generate new chart
-    chartID = CreateEventChart(EventID)
+    chartID = CreateEventChart(eventID)
     
     If chartID > 0 Then
         GenerateEventChartForEvent = True
@@ -1177,10 +1177,10 @@ Public Function GenerateSessionChartForSession(SessionID As Long) As Boolean
 End Function
 
 ' Function to display chart in aspect grid
-Public Function ViewChartInAspectGrid(chartType As String, Optional PersonID As Long = 0, Optional EventID As Long = 0, Optional SessionID As Long = 0) As Boolean
+Public Function ViewChartInAspectGrid(chartType As String, Optional PersonID As Long = 0, Optional eventID As Long = 0, Optional SessionID As Long = 0) As Boolean
     Dim chartID As Long
     
-    chartID = GetChartID(chartType, PersonID, EventID, SessionID)
+    chartID = GetChartID(chartType, PersonID, eventID, SessionID)
     
     If chartID = 0 Then
         MsgBox "No chart found for the specified criteria.", vbInformation

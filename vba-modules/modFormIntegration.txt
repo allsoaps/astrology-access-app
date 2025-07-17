@@ -236,7 +236,7 @@ End Function
 ' ========================================
 
 ' Function to be called from frmEventNew for event chart generation
-Public Function GenerateEventChartFromForm(EventID As Long) As Boolean
+Public Function GenerateEventChartFromForm(eventID As Long) As Boolean
     Dim chartID As Long
     
     On Error GoTo ErrorHandler
@@ -252,7 +252,7 @@ Public Function GenerateEventChartFromForm(EventID As Long) As Boolean
 '            chartID = modChartCalculation.RegenerateChart(CHART_TYPE_EVENT, , eventID)
         End If
     Else
-        chartID = modChartCalculation.CreateEventChart(EventID)
+        chartID = modChartCalculation.CreateEventChart(eventID)
     End If
     
     If chartID > 0 Then
@@ -271,7 +271,7 @@ ErrorHandler:
 End Function
 
 ' Function to view event chart
-Public Function ViewEventChartFromForm(EventID As Long) As Boolean
+Public Function ViewEventChartFromForm(eventID As Long) As Boolean
     Dim chartID As Long
     
     On Error GoTo ErrorHandler
@@ -284,7 +284,7 @@ Public Function ViewEventChartFromForm(EventID As Long) As Boolean
         response = MsgBox("No event chart exists. Would you like to generate one now?", vbYesNo + vbQuestion, "No Chart Found")
         
         If response = vbYes Then
-            If GenerateEventChartFromForm(EventID) Then
+            If GenerateEventChartFromForm(eventID) Then
 '                chartID = modChartCalculation.ChartExists(CHART_TYPE_EVENT, , eventID)
             Else
                 ViewEventChartFromForm = False

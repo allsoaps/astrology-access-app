@@ -136,68 +136,139 @@ Public Function GetSwissEphConstant(planetName As String) As Long
     End Select
 End Function
 
+'Public Function InitSwissEph() As Boolean
+'    On Error GoTo ErrorHandler
+'
+'    ' Reset initialization flag
+'    m_IsInitialized = False
+'
+'    ' Get DLL and ephemeris paths from database settings
+'    If Not LoadPathsFromDatabase() Then
+'        MsgBox "Could not load Swiss Ephemeris paths from database. Please check tblSwissEphSettings.", vbExclamation
+'        Exit Function
+'    End If
+'
+'    ' Verify DLL file exists
+'    If Not VerifyDLLExists() Then
+'        Exit Function
+'    End If
+'
+'    ' Verify ephemeris path exists
+'    If Not VerifyEphePathExists() Then
+'        Exit Function
+'    End If
+'
+'    ' Test if the DLL is accessible
+'    Dim xx(6) As Double
+'    Dim serr As String
+'    'Dim serr As String * 255
+'    Dim result As Long
+'
+'    ' Initialize error string properly
+'    'serr = vbNullString
+'    'serr = " "
+'    serr = String(255, vbNullChar)
+'
+'    '' Set the ephemeris path
+'    'Call swe_set_ephe_path(m_EphePath)
+'
+'
+'    Dim pathSetResult As Long
+'
+'pathSetResult = swe_set_ephe_path(m_EphePath)
+'If pathSetResult = 0 Then
+'    MsgBox "Failed to set ephemeris path: " & m_EphePath, vbCritical
+'    Exit Function
+'End If
+'
+'
+'
+'    ' Try to get the Sun's position for current date
+'    Dim julDay As Double
+'    julDay = modUtilities.DateToJulianDay(Now)
+'
+'    ' Use simple flags (no speed)
+'    'result = swe_calc_ut(julDay, SE_SUN, 0, xx(0), serr)
+'    'result = SafeCalcUT(julDay, SE_SUN, 0, xx(0), serr)
+'
+'    Dim sunPosition As Double
+'
+'    If SafeCalcUT(julDay, SE_SUN, 0, sunPosition) Then
+'        m_IsInitialized = True
+'        InitSwissEph = True
+'    Else
+'        Debug.Print "Swiss Ephemeris initialization failed"
+'        MsgBox "Swiss Ephemeris calculation failed", vbExclamation, "Error"
+'        InitSwissEph = False
+'    End If
+'    Exit Function
+'
+'ErrorHandler:
+'    Debug.Print "Error in InitSwissEph: " & Err.Number & " - " & Err.Description
+'
+'    ' Provide more specific error messages
+'    Select Case Err.Number
+'        Case 48, 53 ' File not found errors
+'            MsgBox "Swiss Ephemeris DLL not found. Please ensure the DLL files are in the correct location:" & vbCrLf & _
+'                   "Expected: " & GetExpectedDLLPath() & vbCrLf & vbCrLf & _
+'                   "Current setting: " & m_DLLPath, vbExclamation, "DLL Not Found"
+'        Case Else
+'            MsgBox "Failed to initialize Swiss Ephemeris: " & Err.Description, vbExclamation, "Error"
+'    End Select
+'
+'    InitSwissEph = False
+'End Function
+
+
+
 Public Function InitSwissEph() As Boolean
     On Error GoTo ErrorHandler
-    
+
     ' Reset initialization flag
     m_IsInitialized = False
-    
-    ' Get DLL and ephemeris paths from database settings
+
+
+Call swe_close
+Call SafeSetEphePath(m_EphePath)
+
+
+    ' Load paths from database or defaults
     If Not LoadPathsFromDatabase() Then
         MsgBox "Could not load Swiss Ephemeris paths from database. Please check tblSwissEphSettings.", vbExclamation
         Exit Function
     End If
-    
+
     ' Verify DLL file exists
-    If Not VerifyDLLExists() Then
-        Exit Function
-    End If
-    
+    If Not VerifyDLLExists() Then Exit Function
+
     ' Verify ephemeris path exists
-    If Not VerifyEphePathExists() Then
+    If Not VerifyEphePathExists() Then Exit Function
+
+    ' Set the ephemeris path using safe wrapper
+    If Not SafeSetEphePath(m_EphePath, True) Then
+        MsgBox "Failed to set the ephemeris path: " & m_EphePath, vbCritical, "Swiss Ephemeris"
         Exit Function
     End If
-    
-    ' Test if the DLL is accessible
-    Dim xx(6) As Double
-    Dim serr As String
-    'Dim serr As String * 255
-    Dim result As Long
-    
-    ' Initialize error string properly
-    'serr = vbNullString
-    'serr = " "
-    serr = String(255, vbNullChar)
-    
-    ' Set the ephemeris path
-    Call swe_set_ephe_path(m_EphePath)
-    
-    ' Try to get the Sun's position for current date
+
+    ' Test the DLL by calculating the Sun's position for current date
     Dim julDay As Double
     julDay = modUtilities.DateToJulianDay(Now)
-    
-    ' Use simple flags (no speed)
-    'result = swe_calc_ut(julDay, SE_SUN, 0, xx(0), serr)
-    'result = SafeCalcUT(julDay, SE_SUN, 0, xx(0), serr)
-    
+
     Dim sunPosition As Double
-    
     If SafeCalcUT(julDay, SE_SUN, 0, sunPosition) Then
         m_IsInitialized = True
         InitSwissEph = True
     Else
         Debug.Print "Swiss Ephemeris initialization failed"
-        MsgBox "Swiss Ephemeris calculation failed", vbExclamation, "Error"
+        MsgBox "Swiss Ephemeris calculation failed", vbExclamation, "Initialization Error"
         InitSwissEph = False
     End If
+
     Exit Function
-    
+
 ErrorHandler:
-#If DEBUG_MODE Then
     Debug.Print "Error in InitSwissEph: " & Err.Number & " - " & Err.Description
-#End If
-    
-    ' Provide more specific error messages
+
     Select Case Err.Number
         Case 48, 53 ' File not found errors
             MsgBox "Swiss Ephemeris DLL not found. Please ensure the DLL files are in the correct location:" & vbCrLf & _
@@ -206,9 +277,13 @@ ErrorHandler:
         Case Else
             MsgBox "Failed to initialize Swiss Ephemeris: " & Err.Description, vbExclamation, "Error"
     End Select
-    
+
     InitSwissEph = False
 End Function
+
+
+
+
 
 Private Function LoadPathsFromDatabase() As Boolean
     On Error GoTo ErrorHandler
@@ -224,16 +299,30 @@ Private Function LoadPathsFromDatabase() As Boolean
     Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
     
     If Not rs.EOF Then
-        m_EphePath = Nz(rs!EphePath, "")
-        m_DLLPath = Nz(rs!DLLPath, "")
-
         ' If no paths are set, use defaults relative to the database location
-        If m_EphePath = "" Then
-            m_EphePath = GetDefaultEphePath()
-        End If
+'        If m_EphePath = "" Then
+'            m_EphePath = GetDefaultEphePath()
+'        End If
         If m_DLLPath = "" Then
             m_DLLPath = GetDefaultDLLPath()
         End If
+        
+        
+        Debug.Print "Swiss EPHE path in LoadPathsFromDatabase: " & m_EphePath
+        Debug.Print "Swiss DLL path in LoadPathsFromDatabase: " & m_DLLPath
+        
+        
+        
+m_EphePath = Nz(rs!EphePath, "")
+If Trim$(m_EphePath) = "" Then m_EphePath = GetDefaultEphePath()
+        
+        m_DLLPath = Nz(rs!DLLPath, "")
+        
+        
+
+        
+        Debug.Print "Swiss EPHE path in LoadPathsFromDatabase: " & m_EphePath
+        Debug.Print "Swiss DLL path in LoadPathsFromDatabase: " & m_DLLPath
         
         LoadPathsFromDatabase = True
     Else
@@ -268,6 +357,8 @@ Private Function GetDefaultEphePath() As String
     ' Default to Resources\ephe subdirectory relative to database
     Dim dbPath As String
     dbPath = CurrentProject.path
+    Debug.Print 'Get Default EPHE Path - CURRENTPROJECT dbPath value: " & dbPath
+
     GetDefaultEphePath = dbPath & "\Resources\ephe"
 End Function
 
@@ -275,6 +366,8 @@ Private Function GetDefaultDLLPath() As String
     ' Default to Resources subdirectory relative to database
     Dim dbPath As String
     dbPath = CurrentProject.path
+    Debug.Print 'Get Default DLL Path - CURRENTPROJECT dbPath value: " & dbPath
+    
     GetDefaultDLLPath = dbPath & "\Resources\sweph\bin"
 End Function
 
@@ -324,6 +417,9 @@ Private Sub CreateDefaultSettings()
     
     sql = "INSERT INTO tblSwissEphSettings (SettingID, EphePath, DLLPath, DefaultHouseSystem, DefaultOrbs, IncludeAsteroids, UseTopocentric, UseTrue) " & _
           "VALUES (1, '" & GetDefaultEphePath() & "', '" & GetDefaultDLLPath() & "', 1, True, False, False, True)"
+    
+Debug.Print "sql from CreateDefaultSettings:  " & sql
+
     
     db.Execute sql
     
@@ -510,23 +606,28 @@ Public Property Get DLLPath() As String
 End Property
 
 ' === Safe function to set the ephemeris path ===
-Public Function SafeSetEphePath(EphePath As String, Optional showMsg As Boolean = True) As Boolean
-    On Error GoTo Fail
-
-    If Dir(EphePath, vbDirectory) = "" Then
-        If showMsg Then MsgBox "Invalid Ephemeris Path: " & EphePath, vbCritical
-        SafeSetEphePath = False
-        Exit Function
-    End If
-
-    swe_set_ephe_path EphePath
-    SafeSetEphePath = True
-    Exit Function
-
-Fail:
-    If showMsg Then MsgBox "Error calling swe_set_ephe_path: " & Err.Description, vbCritical
-    SafeSetEphePath = False
-End Function
+'Public Function SafeSetEphePath(EphePath As String, Optional showMsg As Boolean = True) As Boolean
+'    On Error GoTo Fail
+'
+'    If Dir(EphePath, vbDirectory) = "" Then
+'        If showMsg Then MsgBox "Invalid Ephemeris Path: " & EphePath, vbCritical
+'        SafeSetEphePath = False
+'        Exit Function
+'    End If
+'
+'Debug.Print "Calling swe_set_ephe_path with: " & EphePath
+'
+'    swe_set_ephe_path EphePath
+'
+'
+'
+'    SafeSetEphePath = True
+'    Exit Function
+'
+'Fail:
+'    If showMsg Then MsgBox "Error calling swe_set_ephe_path: " & Err.Description, vbCritical
+'    SafeSetEphePath = False
+'End Function
 
 ' === Safe wrapper for swe_calc_ut ===
 Public Function SafeCalcUT(jd As Double, planet As Long, flags As Long, ByRef lonOut As Double, Optional showMsg As Boolean = True) As Boolean
@@ -535,6 +636,7 @@ Public Function SafeCalcUT(jd As Double, planet As Long, flags As Long, ByRef lo
     Dim xx(5) As Double
     Dim serr As String
     Dim result As Long
+
 
     ' Initialize the error string buffer - THIS WAS MISSING
     serr = String(255, vbNullChar)
@@ -545,6 +647,7 @@ Public Function SafeCalcUT(jd As Double, planet As Long, flags As Long, ByRef lo
         If showMsg Then MsgBox "Swiss Ephemeris Error: " & Trim$(serr), vbExclamation
         SafeCalcUT = False
     Else
+    Debug.Print "SafeCalcUT serr value: " & Trim$(serr)
         lonOut = xx(0)
         SafeCalcUT = True
     End If
@@ -656,3 +759,33 @@ ErrorHandler:
     Debug.Print "Error in GetCompletePlanetData: " & Err.Description
     GetCompletePlanetData = Array(-999, -999, -999, -999, -999, -999)
 End Function
+
+
+
+' === Safe wrapper for swe_set_ephe_path ===
+Public Function SafeSetEphePath(EphePath As String, Optional showMsg As Boolean = True) As Boolean
+    On Error GoTo Fail
+
+    If Dir(EphePath, vbDirectory) = "" Then
+        If showMsg Then MsgBox "Invalid Ephemeris Path (not a directory): " & EphePath, vbCritical, "Swiss Ephemeris"
+        SafeSetEphePath = False
+        Exit Function
+    End If
+
+    Dim result As Long
+    result = swe_set_ephe_path(EphePath)
+
+    If result = 0 Then
+        If showMsg Then MsgBox "swe_set_ephe_path failed for: " & EphePath, vbCritical, "Swiss Ephemeris"
+        SafeSetEphePath = False
+    Else
+        Debug.Print "Swiss Ephemeris path set to: " & EphePath
+        SafeSetEphePath = True
+    End If
+    Exit Function
+
+Fail:
+    If showMsg Then MsgBox "Error calling swe_set_ephe_path: " & Err.Description, vbCritical, "Swiss Ephemeris"
+    SafeSetEphePath = False
+End Function
+

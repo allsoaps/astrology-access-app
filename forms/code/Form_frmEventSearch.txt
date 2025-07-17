@@ -354,7 +354,7 @@ ErrorHandler:
            "Error: " & Err.Description, vbCritical, "Error"
 End Sub
 
-Private Function GetChartStatus(EventID As Long) As Boolean
+Private Function GetChartStatus(eventID As Long) As Boolean
     Dim db As DAO.Database
     Dim rs As DAO.Recordset
     Dim sql As String
@@ -362,7 +362,7 @@ Private Function GetChartStatus(EventID As Long) As Boolean
     On Error GoTo ErrorHandler
     
     Set db = CurrentDb()
-    sql = "SELECT EventChartGenerated FROM tblEvents WHERE EventID = " & EventID
+    sql = "SELECT EventChartGenerated FROM tblEvents WHERE EventID = " & eventID
     Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
     
     If Not rs.EOF Then
@@ -386,7 +386,7 @@ ErrorHandler:
     Set db = Nothing
 End Function
 
-Private Function GetEventChartID(EventID As Long) As Long
+Private Function GetEventChartID(eventID As Long) As Long
     Dim db As DAO.Database
     Dim rs As DAO.Recordset
     Dim sql As String
@@ -394,7 +394,7 @@ Private Function GetEventChartID(EventID As Long) As Long
     On Error GoTo ErrorHandler
     
     Set db = CurrentDb()
-    sql = "SELECT ChartID FROM tblCharts WHERE EventID = " & EventID & " AND ChartType = 'Event'"
+    sql = "SELECT ChartID FROM tblCharts WHERE EventID = " & eventID & " AND ChartType = 'Event'"
     Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
     
     If Not rs.EOF Then

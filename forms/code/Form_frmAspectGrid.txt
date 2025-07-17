@@ -34,31 +34,33 @@ Private Sub Form_Load()
     On Error GoTo ErrorHandler
     
      ' Parse OpenArgs to get EventID and EventName
-    If Not IsNull(Me.openArgs) And Len(Me.openArgs) > 0 Then
-        Dim args() As String
-        args = Split(Me.openArgs, "|")
+    
+If Not IsNull(Me.openArgs) And InStr(Me.openArgs, "|") > 0 Then
+    Dim args() As String
+    args = Split(Me.openArgs, "|")
+    Dim PersonID As Long: PersonID = CLng(args(0))
+    Dim eventID As Long: eventID = CLng(args(1))
+    Dim SessionID As Long: SessionID = CLng(args(2))
+    Dim transitType As String: transitType = args(3)
+    
+    m_ChartType = transitType
+    m_ChartTitle = "Transit Chart - " & transitType
+    m_EventID = eventID
+    m_PersonID = PersonID
+    m_SessionID = SessionID
+
+    FormatGridHeaders
+    FormatGridCells
+    PopulateGridHeaders
         
-        If UBound(args) >= 0 Then
-            m_ChartID = CLng(args(0))
-            
-            ' Load and display the chart data
-            LoadChartData
-        Else
-            MsgBox "Invalid chart ID received: " & Me.openArgs, vbCritical, "Chart Display Error"
-            DoCmd.Close acForm, Me.name
-        End If
-        
-        If UBound(args) >= 1 Then
-            m_EventName = args(1)
-            If Len(m_EventName) > 0 Then Me.lblHeaderLine1.Caption = "Event: " & m_EventName
-        End If
-        
-        ' Load the data now that we have the EventID
-'        If m_EventID > 0 Then
-'            BuildAndShowViewerData
-'        End If
-    End If
-    'm_FormLoading = True
+    Call PopulateTransitGridWithColor(PersonID, eventID, SessionID, transitType)
+    
+    
+    Me.Caption = "Transit Chart: Viewer vs Session"
+    Exit Sub
+End If
+    
+    
     
     ' Set up dropdown
     With Me.cboChartType
@@ -70,7 +72,13 @@ Private Sub Form_Load()
     End With
     
     ' Parse OpenArgs
-    ParseOpenArgs
+'    ParseOpenArgs
+
+
+
+
+    
+    
     
     ' Load initial chart
     LoadSelectedChart
@@ -123,36 +131,55 @@ Private Sub LoadChartMetadata()
     Dim rs As DAO.Recordset
     Dim sql As String
     
+    
     Set db = CurrentDb()
     
     ' Get chart information
-    sql = "SELECT c.*, p.FirstName, p.LastName, e.EventName " & _
-          "FROM (tblCharts c " & _
-          "LEFT JOIN tblPeople p ON c.PersonID = p.PersonID) " & _
-          "LEFT JOIN tblEvents e ON c.EventID = e.EventID " & _
-          "WHERE c.ChartID = " & m_ChartID
+    
+   
+    sql = "SELECT s.*, p.FirstName, p.LastName, e.EventName, l.* " & _
+          "FROM ((tblSessions s " & _
+          "LEFT JOIN tblPeople p ON s.PersonID = p.PersonID) " & _
+          "LEFT JOIN tblEvents e ON s.EventID = e.EventID) " & _
+          "LEFT JOIN tblLocations l ON s.LocationID = l.LocationID " & _
+          "WHERE s.SessionID = " & m_SessionID
+    
+
     
     Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
     
     If Not rs.EOF Then
-        m_ChartType = Nz(rs!chartType, "Unknown")
-        
         ' Build chart title based on chart type
         Select Case m_ChartType
-            Case "Natal"
-                m_ChartTitle = "Natal Chart - " & Nz(rs!FirstName, "") & " " & Nz(rs!LastName, "")
-            Case "Event"
-                m_ChartTitle = "Event Chart - " & Nz(rs!eventName, "Unknown Event")
-            Case "Session"
-                m_ChartTitle = "Session Chart - " & Format(rs!ChartDate, "mm/dd/yyyy") & " " & Format(rs!ChartTime, "h:nn AM/PM")
+            Case "Viewer_Session"
+                m_ChartTitle = "Transit Chart:  Viewer -> Session "
+            
+                ' Update labels on form
+                Me.lblChartTitle.Caption = m_ChartTitle
+                Me.lblChartDate.Caption = "Session Date/Time: " & Format(rs!sessionDate, "dddd, mmmm d, yyyy") & " at " & Format(rs!SessionStartTime, "h:nn AM/PM")
+                Me.lblLocation.Caption = "Session Location: " & rs!City & ", " & rs!StateProvince & ", " & rs!Country
+                Me.lblHeaderLine1.Caption = "Viewer: " & rs!FirstName & " " & rs!LastName
+                Me.lblTransitTypeName.Caption = "Viewer: " & rs!FirstName & " " & rs!LastName
+                
+            Case "Viewer_Event"
+                m_ChartTitle = "Transit Chart: Viewer -> Event "
+            
+                ' Update labels on form
+                Me.lblChartTitle.Caption = m_ChartTitle
+                Me.lblChartDate.Caption = "Event Date/Time: " & Format(rs!eventDate, "dddd, mmmm d, yyyy") & " at " & Format(rs!eventTime, "h:nn AM/PM")
+                Me.lblLocation.Caption = "Event Location: " & rs!City & ", " & rs!StateProvince & ", " & rs!Country
+                Me.lblHeaderLine1.Caption = "Viewer: " & rs!FirstName & " " & rs!LastName
+                Me.lblTransitTypeName.Caption = "Viewer: " & rs!FirstName & " " & rs!LastName
+                
+            Case "Reference_Event"
+            Case "Reference_Session"
+            Case "Reference_Viewer"
+            Case "Session_Event"
+            
             Case Else
                 m_ChartTitle = m_ChartType & " Chart - " & Format(rs!ChartDate, "mm/dd/yyyy")
         End Select
         
-        ' Update labels on form
-        Me.lblChartTitle.Caption = m_ChartTitle
-        Me.lblChartDate.Caption = "Date: " & Format(rs!ChartDate, "dddd, mmmm d, yyyy") & " at " & Format(rs!ChartTime, "h:nn AM/PM")
- '       Me.lblLocation.Caption =
     Else
         m_ChartTitle = "Chart Not Found"
         Me.lblChartTitle.Caption = "Chart ID " & m_ChartID & " not found"
@@ -214,12 +241,12 @@ Private Sub PopulateGridHeaders()
     i = 1
     Do While Not rs.EOF And i <= 18
         ' Populate horizontal header
-        Me.Controls("header_" & i).Caption = Nz(rs!Symbol, Left(rs!BodyName, 2))
+        Me.Controls("header_" & i).Caption = Nz(rs!symbol, Left(rs!BodyName, 2))
         
         ' Populate vertical header
-        Me.Controls("sidebar_" & i).Caption = Nz(rs!Symbol, Left(rs!BodyName, 2))
+        Me.Controls("sidebar_" & i).Caption = Nz(rs!symbol, Left(rs!BodyName, 2))
         
-        Debug.Print "Header " & i & ": " & rs!BodyName & " (" & Nz(rs!Symbol, "No Symbol") & ")"
+        Debug.Print "Header " & i & ": " & rs!BodyName & " (" & Nz(rs!symbol, "No Symbol") & ")"
         
         rs.MoveNext
         i = i + 1
@@ -570,7 +597,7 @@ End Function
 
 
 ' Function to load transit aspects into the grid
-Private Sub LoadTransitAspectGrid(transitType As String, PersonID As Long, EventID As Long, SessionID As Long)
+Private Sub LoadTransitAspectGrid(transitType As String, PersonID As Long, eventID As Long, SessionID As Long)
     On Error GoTo ErrorHandler
     
     Dim db As DAO.Database
@@ -586,9 +613,9 @@ Private Sub LoadTransitAspectGrid(transitType As String, PersonID As Long, Event
           "asp.Symbol AS AspectSymbol " & _
           "FROM ((tblTransitAspects ta " & _
           "INNER JOIN tblCelestialBodies cb1 ON ta.TransitBodyID = cb1.BodyID) " & _
-          "INNER JOIN tblCelestialBodies cb2 ON ta.BaseBodyID = cb2.BodyID) " & _
+          "INNER JOIN tblCelestialBodies cb2 ON ta.NatalBodyID = cb2.BodyID) " & _
           "INNER JOIN tblAspects asp ON ta.AspectID = asp.AspectID " & _
-          "WHERE ta.PersonID = " & PersonID & " AND ta.EventID = " & EventID & _
+          "WHERE ta.PersonID = " & PersonID & " AND ta.EventID = " & eventID & _
           " AND ta.SessionID = " & SessionID & " AND ta.TransitType = '" & transitType & "' " & _
           "ORDER BY cb2.DisplayOrder, cb1.DisplayOrder"
     
@@ -612,7 +639,7 @@ Private Sub LoadTransitAspectGrid(transitType As String, PersonID As Long, Event
     Loop
     
     ' Set up axis labels (you'll need to implement this based on your form design)
-    SetupTransitGridLabels transitType, PersonID, EventID, SessionID
+    SetupTransitGridLabels transitType, PersonID, eventID, SessionID
     
 CleanExit:
     On Error Resume Next
@@ -626,7 +653,7 @@ ErrorHandler:
     Resume CleanExit
 End Sub
 
-Private Sub SetupTransitGridLabels(transitType As String, PersonID As Long, EventID As Long, SessionID As Long)
+Private Sub SetupTransitGridLabels(transitType As String, PersonID As Long, eventID As Long, SessionID As Long)
     ' Set up row and column labels for transit grid
     ' Implementation depends on your form's label controls
     ' This is a placeholder - you'll need to customize based on your form design
@@ -645,4 +672,99 @@ Private Sub SetupTransitGridLabels(transitType As String, PersonID As Long, Even
     
     On Error GoTo 0
 End Sub
+
+Private Sub PopulateTransitGridWithColor(PersonID As Long, eventID As Long, SessionID As Long, transitType As String)
+    On Error GoTo ErrorHandler
+
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    Dim rsBodyMap As DAO.Recordset
+    Dim sql As String
+    Dim row As Integer, col As Integer
+    Dim symbol As String, aspectType As String
+    Dim exactDeg As Double, formattedText As String
+    Dim applying As Boolean, cellColor As Long
+    
+    LoadChartMetadata
+
+    Set db = CurrentDb
+
+    ' Clear grid
+    Dim i As Integer, j As Integer
+    For i = 1 To 18
+        For j = 1 To 18
+            With Me.Controls("cell_" & i & "_" & j)
+                .value = ""
+                .backColor = RGB(255, 255, 255)
+            End With
+        Next j
+    Next i
+
+    ' Build BodyID ? DisplayOrder map using Collection
+    Dim bodyPositions As New Collection
+    sql = "SELECT BodyID, DisplayOrder FROM tblCelestialBodies WHERE IsActive = True ORDER BY DisplayOrder"
+    Set rsBodyMap = db.OpenRecordset(sql, dbOpenSnapshot)
+
+    Dim pos As Integer: pos = 1
+    Do While Not rsBodyMap.EOF And pos <= 18
+        bodyPositions.Add pos, CStr(rsBodyMap!BodyID)
+        rsBodyMap.MoveNext
+        pos = pos + 1
+    Loop
+    rsBodyMap.Close
+
+    ' Pull transit aspects with type + orb info
+    sql = "SELECT ta.TransitBodyID, ta.NatalBodyID, asp.Symbol, asp.AspectType, " & _
+          "ta.ExactDegree, ta.OrbitApplying " & _
+          "FROM tblTransitAspects ta " & _
+          "INNER JOIN tblAspects asp ON ta.AspectID = asp.AspectID " & _
+          "WHERE ta.PersonID = " & PersonID & " AND ta.EventID = " & eventID & _
+          " AND ta.SessionID = " & SessionID & " AND ta.TransitType = '" & Replace(transitType, "'", "''") & "'"
+
+    Set rs = db.OpenRecordset(sql)
+
+    Do While Not rs.EOF
+        On Error Resume Next
+        row = bodyPositions(CStr(rs!transitBodyID))
+        col = bodyPositions(CStr(rs!natalBodyID))
+        On Error GoTo ErrorHandler
+
+        If row >= 1 And row <= 18 And col >= 1 And col <= 18 Then
+            symbol = Nz(rs!symbol, "?")
+            aspectType = Nz(rs!aspectType, "")
+            exactDeg = Nz(rs!ExactDegree, 0)
+            applying = Nz(rs!OrbitApplying, False)
+
+            Dim degrees As Integer, wholeDegrees As Integer, minutes As Integer
+            wholeDegrees = Int(exactDeg)
+            minutes = Round((exactDeg - wholeDegrees) * 60)
+            formattedText = symbol & " " & wholeDegrees & IIf(applying, "A", "S") & Format(minutes, "00")
+
+            Select Case UCase(aspectType)
+                Case "MAJOR": cellColor = RGB(255, 230, 230)   ' Soft red
+                Case "MINOR": cellColor = RGB(230, 255, 230)   ' Soft green
+                Case "HARMONIC": cellColor = RGB(230, 230, 255) ' Soft blue
+                Case Else: cellColor = RGB(240, 240, 240)        ' Default gray
+            End Select
+
+            With Me.Controls("cell_" & row & "_" & col)
+                .value = formattedText
+                .backColor = cellColor
+                .ControlTipText = "Transit: " & symbol & " " & "Orb: " & Format(exactDeg, "0.00") & "° " & IIf(applying, "(Applying)", "(Separating)") & " Type: " & aspectType
+            End With
+            'End With
+        End If
+
+        rs.MoveNext
+    Loop
+
+    rs.Close
+    Set db = Nothing
+    Debug.Print "Transit grid populated with color and orb/symbol formatting."
+    Exit Sub
+
+ErrorHandler:
+    MsgBox "Error in PopulateTransitGridWithColor: " & Err.Description, vbCritical
+End Sub
+
 

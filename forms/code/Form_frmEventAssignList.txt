@@ -129,7 +129,7 @@ Private Sub btnSave_Click()
     If Not rsTemp.EOF Then
         Do While Not rsTemp.EOF
             sql = "INSERT INTO tblAssignments (PersonID, EventID, DateCreated) " & _
-                  "VALUES (" & m_PersonID & ", " & rsTemp!EventID & ", Now())"
+                  "VALUES (" & m_PersonID & ", " & rsTemp!eventID & ", Now())"
             db.Execute sql, dbFailOnError
             assignmentCount = assignmentCount + 1
             rsTemp.MoveNext

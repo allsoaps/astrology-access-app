@@ -8,18 +8,106 @@ Attribute VB_Creatable = True
 Attribute VB_PredeclaredId = True
 Attribute VB_Exposed = False
 Option Compare Database
+Option Explicit
 
-Private Sub btnSave_Click()
+'================'
+' FORM EVENTS    '
+'================'
+
+Private Sub Form_Load()
+    On Error GoTo Err_Load
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    Dim sql As String
+
+    Set db = CurrentDb()
+
+
+    sql = "SELECT MajorOrbAdj, MinorOrbAdj FROM tblAspectOrb"
+    Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
+
+
+    If Not rs.EOF Then
+        Me.txtMajorOrb = rs!MajorOrbAdj
+        Me.txtMinorOrb = rs!MinorOrbAdj
+    End If
+    
+    rs.Close
+
+    Set rs = Nothing
+    Set db = Nothing
+    
+    Exit Sub
+
+Err_Load:
+    MsgBox "Error loading Orb adjustments form: " & Err.Description, vbCritical, "Form Load Error"
+End Sub
+
+'================'
+' BUTTON EVENTS  '
+'================'
+
+Private Sub btnSaveOrbConfig_Click()
+    On Error GoTo Err_Save
+    
     Dim majorOrb As Double, minorOrb As Double
     
     majorOrb = val(Me.txtMajorOrb)
     minorOrb = val(Me.txtMinorOrb)
     
-    If majorOrb > 0 And minorOrb > 0 Then
-        modFormIntegration.ApplyAspectOrbConfig majorOrb, minorOrb
+    If Not IsNull(majorOrb) And Not IsNull(minorOrb) Then
+'        modFormIntegration.ApplyAspectOrbConfig majorOrb, minorOrb 'not sure if this is needed as part of save? maybe during transit chart gen only.
+        
+        Dim db As DAO.Database
+        Set db = CurrentDb()
+    
+        Dim sql As String
+        sql = "UPDATE tblAspectOrb " & _
+              "SET tblAspectOrb.MajorOrbAdj = " & Nz(majorOrb, 0) & ", " & _
+              "    tblAspectOrb.MinorOrbAdj = " & Nz(minorOrb, 0) & ";"
+        
+        db.Execute sql, dbFailOnError
+    
+        Set db = Nothing
+        
         MsgBox "Orb configuration saved!", vbInformation
         DoCmd.Close acForm, Me.name
+        Exit Sub
     Else
-End If
+        MsgBox "An error occurred while trying to save Orbs. Enter a value: " & Err.Description, vbExclamation, "Save Error"
+    End If
+    
+    
+    Exit Sub
+    
+Err_Save:
+    Set db = Nothing
+    MsgBox "An error occurred while trying to save: " & Err.Description, vbExclamation, "Save Error"
+End Sub
+
+Private Sub btnCancel_Click()
+    ' If the user has made any changes, the form will be "dirty".
+    If Me.Dirty Then
+        Dim response As VbMsgBoxResult
+        response = MsgBox("You have unsaved changes. Do you want to save them before closing?", _
+                          vbQuestion + vbYesNoCancel, "Save Changes?")
+                          
+        Select Case response
+            Case vbYes
+                ' User wants to save. Call the save button's logic.
+                btnSaveOrbConfig_Click
+                
+            Case vbNo
+                ' User wants to discard changes. Simply close the form.
+                DoCmd.Close acForm, Me.name
+                
+            Case vbCancel
+                ' User canceled the close operation. Do nothing and stay on the form.
+                Exit Sub
+        End Select
+    Else
+        ' If the form is not dirty, just close.
+        DoCmd.Close acForm, Me.name
+    End If
 End Sub
 

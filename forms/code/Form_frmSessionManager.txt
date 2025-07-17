@@ -117,6 +117,33 @@ Private Const SEFLG_SWIEPH As Long = 2 ' Use Swiss Ephemeris
 
 
 
+Private Sub btnViewTransitChart_Click()
+    On Error GoTo ErrorHandler
+
+    If m_SessionID = 0 Or m_PersonID = 0 Or m_EventID = 0 Then
+        MsgBox "Please ensure a Viewer, Event, and Session are selected.", vbExclamation
+        Exit Sub
+    End If
+
+    ' Ensure the transit data is generated
+    Dim Success As Boolean
+    Success = GenerateTransitChartEx("Viewer_Session", m_PersonID, m_EventID, m_SessionID)
+
+    If Not Success Then
+        MsgBox "Transit chart generation failed.", vbCritical
+        Exit Sub
+    End If
+
+    ' Pass the needed context to frmAspectGrid using openArgs
+    Dim args As String
+    args = m_PersonID & "|" & m_EventID & "|" & m_SessionID & "|Viewer_Session"
+    DoCmd.OpenForm "frmAspectGrid", acNormal, , , , , args
+    Exit Sub
+
+ErrorHandler:
+    MsgBox "Error in View Transit Chart: " & Err.Description, vbCritical
+End Sub
+
 '================'
 '  FORM EVENTS   '
 '================'
@@ -524,8 +551,8 @@ Private Sub SetupForViewer(ByVal PersonID As Long)
     End If
 End Sub
 
-Private Sub SetupForEvent(ByVal EventID As Long)
-    m_EventID = EventID
+Private Sub SetupForEvent(ByVal eventID As Long)
+    m_EventID = eventID
     Me.txtEventName.value = DLookup("EventName", "tblEvents", "EventID = " & m_EventID)
     Me.cboSelectEvent.Enabled = False
     Me.cboSelectEvent.Visible = False
@@ -1135,7 +1162,7 @@ Private Function SaveSessionRecord() As Boolean
         rsSession.Edit
                   
           rsSession!PersonID = m_PersonID
-          rsSession!EventID = m_EventID
+          rsSession!eventID = m_EventID
           rsSession!sessionDate = Me.txtSessionDate
           rsSession!SessionStartTime = Me.txtStartTime
           rsSession!SessionEndTime = Me.txtEndTime
@@ -1160,7 +1187,7 @@ Private Function SaveSessionRecord() As Boolean
 
         rsSession.AddNew
           rsSession!PersonID = m_PersonID
-          rsSession!EventID = m_EventID
+          rsSession!eventID = m_EventID
           rsSession!sessionDate = Me.txtSessionDate
           rsSession!SessionStartTime = Me.txtStartTime
           rsSession!SessionEndTime = Me.txtEndTime
@@ -1597,7 +1624,7 @@ Private Function CreateNewSessionRecord() As Long
     rs.AddNew
     With rs
         !PersonID = GetPersonIDFromViewer()
-        !EventID = GetEventIDFromEvent()
+        !eventID = GetEventIDFromEvent()
         !sessionDate = Me.txtSessionDate
         !SessionStartTime = Me.txtStartTime
         !SessionEndTime = Nz(Me.txtEndTime, Null)
@@ -1783,7 +1810,7 @@ ErrorHandler:
     Set db = Nothing
 End Function
 
-Private Function FindSessionID(PersonID As Long, EventID As Long) As Long
+Private Function FindSessionID(PersonID As Long, eventID As Long) As Long
     On Error GoTo ErrorHandler
     
     Dim db As DAO.Database
@@ -1791,7 +1818,7 @@ Private Function FindSessionID(PersonID As Long, EventID As Long) As Long
     Dim sql As String
     
     Set db = CurrentDb()
-    sql = "SELECT SessionID FROM tblSessions WHERE PersonID = " & PersonID & " AND EventID = " & EventID
+    sql = "SELECT SessionID FROM tblSessions WHERE PersonID = " & PersonID & " AND EventID = " & eventID
     Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
     
     If Not rs.EOF Then

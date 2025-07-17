@@ -343,7 +343,7 @@ Public Sub TestTransitChart()
 End Sub
 
 ' Enhanced main function - handles all 6 transit variations
-Public Function GenerateTransitChartEx(transitType As String, PersonID As Long, EventID As Long, SessionID As Long, Optional ReferencePersonID As Long = 0) As Boolean
+Public Function GenerateTransitChartEx(transitType As String, PersonID As Long, eventID As Long, SessionID As Long, Optional ReferencePersonID As Long = 0) As Boolean
     On Error GoTo ErrorHandler
     
     Dim baseChartID As Long, transitChartID As Long
@@ -351,10 +351,10 @@ Public Function GenerateTransitChartEx(transitType As String, PersonID As Long, 
     
     Debug.Print "=== GENERATING TRANSIT CHART EXTENDED ==="
     Debug.Print "Transit Type: " & transitType
-    Debug.Print "PersonID: " & PersonID & ", EventID: " & EventID & ", SessionID: " & SessionID
+    Debug.Print "PersonID: " & PersonID & ", EventID: " & eventID & ", SessionID: " & SessionID
     
     ' Get chart IDs based on transit type
-    If Not GetTransitChartIDs(transitType, PersonID, EventID, SessionID, ReferencePersonID, baseChartID, transitChartID, baseChartType, transitChartType) Then
+    If Not GetTransitChartIDs(transitType, PersonID, eventID, SessionID, ReferencePersonID, baseChartID, transitChartID, baseChartType, transitChartType) Then
         Debug.Print "ERROR: Could not resolve chart IDs for transit type: " & transitType
         GenerateTransitChartEx = False
         Exit Function
@@ -364,7 +364,7 @@ Public Function GenerateTransitChartEx(transitType As String, PersonID As Long, 
     Debug.Print "Transit Chart: ID=" & transitChartID & " Type=" & transitChartType
     
     ' Call the core comparison function
-    GenerateTransitChartEx = GenerateTransitComparison(baseChartID, transitChartID, transitType, PersonID, EventID, SessionID)
+    GenerateTransitChartEx = GenerateTransitComparison(baseChartID, transitChartID, transitType, PersonID, eventID, SessionID)
     
     Exit Function
     
@@ -373,136 +373,102 @@ ErrorHandler:
     GenerateTransitChartEx = False
 End Function
 
-' Core function - compares two stored charts (enhanced from your original)
-Private Function GenerateTransitComparison(baseChartID As Long, transitChartID As Long, transitType As String, PersonID As Long, EventID As Long, SessionID As Long) As Boolean
+Private Function GenerateTransitComparison(baseChartID As Long, transitChartID As Long, transitType As String, PersonID As Long, eventID As Long, SessionID As Long) As Boolean
     On Error GoTo ErrorHandler
-    
+
     Dim db As DAO.Database
+    Set db = CurrentDb()
+
     Dim rsBaseChart As DAO.Recordset
     Dim rsTransitChart As DAO.Recordset
     Dim rsTransitAspects As DAO.Recordset
-    
-    Set db = CurrentDb()
-    
-    Debug.Print "=== COMPARING CHARTS ==="
-    Debug.Print "Base ChartID: " & baseChartID & ", Transit ChartID: " & transitChartID
-    
-    ' 1. Get Base Chart Positions
+
+    ' Load Base (Natal) positions
     Set rsBaseChart = db.OpenRecordset( _
         "SELECT cp.*, cb.BodyName FROM tblChartPositions cp " & _
         "INNER JOIN tblCelestialBodies cb ON cp.BodyID = cb.BodyID " & _
-        "WHERE cp.ChartID = " & baseChartID & " AND cb.IsActive = True " & _
-        "ORDER BY cp.BodyID")
-    
-    If rsBaseChart.EOF Then
-        Debug.Print "ERROR: No positions found for base chart ID " & baseChartID
-        GenerateTransitComparison = False
-        Exit Function
-    End If
-    
-    ' 2. Get Transit Chart Positions
+        "WHERE cp.ChartID = " & baseChartID & " AND cb.IsActive = True ORDER BY cp.BodyID")
+
+    If rsBaseChart.EOF Then GoTo CleanFail
+
+    ' Load Transit (Session) positions
     Set rsTransitChart = db.OpenRecordset( _
         "SELECT cp.*, cb.BodyName FROM tblChartPositions cp " & _
         "INNER JOIN tblCelestialBodies cb ON cp.BodyID = cb.BodyID " & _
-        "WHERE cp.ChartID = " & transitChartID & " AND cb.IsActive = True " & _
-        "ORDER BY cp.BodyID")
-    
-    If rsTransitChart.EOF Then
-        Debug.Print "ERROR: No positions found for transit chart ID " & transitChartID
-        GenerateTransitComparison = False
-        Exit Function
-    End If
-    
-    Debug.Print "Base chart positions: " & rsBaseChart.recordCount
-    Debug.Print "Transit chart positions: " & rsTransitChart.recordCount
-    
-    ' 3. Clear existing transit aspects for this combination
-    Dim deleteSQL As String
-    deleteSQL = "DELETE FROM tblTransitAspects WHERE " & _
-                "PersonID = " & PersonID & " AND EventID = " & EventID & " AND SessionID = " & SessionID & _
-                " AND TransitType = '" & Replace(transitType, "'", "''") & "'"
-    db.Execute deleteSQL
-    
-    Debug.Print "Cleared existing aspects for this combination"
-    
-    ' 4. Calculate Transit-to-Base Aspects
+        "WHERE cp.ChartID = " & transitChartID & " AND cb.IsActive = True ORDER BY cp.BodyID")
+
+    If rsTransitChart.EOF Then GoTo CleanFail
+
+    ' Safely delete existing rows for this exact comparison
+    On Error Resume Next
+    db.Execute "DELETE FROM tblTransitAspects WHERE BaseChartID = " & baseChartID & _
+               " AND TransitChartID = " & transitChartID & " AND TransitType = '" & Replace(transitType, "'", "''") & "'"
+    On Error GoTo ErrorHandler
+
+    ' Prepare insert target
     Set rsTransitAspects = db.OpenRecordset("tblTransitAspects", dbOpenDynaset)
-    
-    Dim aspectCount As Integer: aspectCount = 0
-    
-    ' Loop through each transit planet
+
+    Dim aspectCount As Long
     rsTransitChart.MoveFirst
     Do While Not rsTransitChart.EOF
-        Debug.Print "Checking transit " & rsTransitChart!BodyName & " at " & Format(rsTransitChart!longitude, "0.00") & "°..."
-        
-        ' Compare this transit planet to all base planets
         rsBaseChart.MoveFirst
         Do While Not rsBaseChart.EOF
-            
-            ' Calculate aspect between transit planet and base planet
+
             Dim aspectResult As Variant
             aspectResult = CalculateTransitAspect( _
                 rsTransitChart!BodyID, rsTransitChart!longitude, _
                 rsBaseChart!BodyID, rsBaseChart!longitude)
-            
-            ' If valid aspect found, save it
-            If IsArray(aspectResult) And CBool(aspectResult(0)) = True Then
+
+            If IsArray(aspectResult) And CBool(aspectResult(0)) Then
                 rsTransitAspects.AddNew
                 rsTransitAspects!PersonID = PersonID
-                rsTransitAspects!EventID = EventID
+                rsTransitAspects!eventID = eventID
                 rsTransitAspects!SessionID = SessionID
                 rsTransitAspects!transitType = transitType
+                rsTransitAspects!transitChartID = transitChartID
+                rsTransitAspects!baseChartID = baseChartID
                 rsTransitAspects!transitBodyID = rsTransitChart!BodyID
-                rsTransitAspects!BaseBodyID = rsBaseChart!BodyID  ' Changed from NatalBodyID
-                rsTransitAspects!aspectID = CInt(aspectResult(1))
-                rsTransitAspects!ExactDegree = CDbl(aspectResult(2))
-                rsTransitAspects!OrbitApplying = CBool(aspectResult(3))
+                rsTransitAspects!natalBodyID = rsBaseChart!BodyID
+                rsTransitAspects!aspectID = aspectResult(1)
+                rsTransitAspects!ExactDegree = aspectResult(2)
+                rsTransitAspects!OrbitApplying = aspectResult(3)
                 rsTransitAspects!transitLongitude = rsTransitChart!longitude
-                rsTransitAspects!BaseLongitude = rsBaseChart!longitude  ' Changed from NatalLongitude
-                rsTransitAspects!Notes = "Transit " & rsTransitChart!BodyName & " to Base " & rsBaseChart!BodyName & " (" & transitType & ")"
+                rsTransitAspects!natalLongitude = rsBaseChart!longitude
                 rsTransitAspects!DateCreated = Now()
                 rsTransitAspects.Update
-                
+
                 aspectCount = aspectCount + 1
-                
-                Debug.Print "ASPECT: Transit " & rsTransitChart!BodyName & _
-                    " " & GetAspectName(CInt(aspectResult(1))) & _
-                    " Base " & rsBaseChart!BodyName & _
-                    " (Orb: " & Format(aspectResult(2), "0.00") & "°)"
             End If
-            
+
             rsBaseChart.MoveNext
         Loop
-        
         rsTransitChart.MoveNext
     Loop
-    
-    Debug.Print "=== TRANSIT COMPARISON COMPLETE ==="
-    Debug.Print "Total aspects found: " & aspectCount
-    
-    ' Cleanup
-    rsBaseChart.Close
-    rsTransitChart.Close
-    rsTransitAspects.Close
-    Set db = Nothing
-    
+
+    Debug.Print "Generated " & aspectCount & " transit aspects"
     GenerateTransitComparison = True
-    Exit Function
-    
-ErrorHandler:
-    Debug.Print "ERROR in GenerateTransitComparison: " & Err.Number & " - " & Err.Description
+    GoTo Cleanup
+
+CleanFail:
+    Debug.Print "No data in one or both charts"
     GenerateTransitComparison = False
-    
-    ' Cleanup on error
-    On Error Resume Next
+
+Cleanup:
     If Not rsBaseChart Is Nothing Then rsBaseChart.Close
     If Not rsTransitChart Is Nothing Then rsTransitChart.Close
     If Not rsTransitAspects Is Nothing Then rsTransitAspects.Close
     Set db = Nothing
+    Exit Function
+
+ErrorHandler:
+    MsgBox "Error in GenerateTransitComparison: " & Err.Description, vbCritical
+    GenerateTransitComparison = False
+    Resume Cleanup
 End Function
 
+
 ' Update the GetTransitChartIDs function with corrected debug messages:
-Private Function GetTransitChartIDs(transitType As String, PersonID As Long, EventID As Long, SessionID As Long, ReferencePersonID As Long, _
+Private Function GetTransitChartIDs(transitType As String, PersonID As Long, eventID As Long, SessionID As Long, ReferencePersonID As Long, _
                                   ByRef baseChartID As Long, ByRef transitChartID As Long, _
                                   ByRef baseChartType As String, ByRef transitChartType As String) As Boolean
     
@@ -522,7 +488,7 @@ Private Function GetTransitChartIDs(transitType As String, PersonID As Long, Eve
             ' Base: Event Chart, Transit: Session Chart
             Debug.Print "Event to Session Transit"
             
-            sql = "SELECT ChartID FROM tblCharts WHERE EventID = " & EventID & " AND ChartType = 'Event'"
+            sql = "SELECT ChartID FROM tblCharts WHERE EventID = " & eventID & " AND ChartType = 'Event'"
             Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
             If Not rs.EOF Then
                 baseChartID = rs!chartID
@@ -553,7 +519,7 @@ Private Function GetTransitChartIDs(transitType As String, PersonID As Long, Eve
             End If
             rs.Close
             
-            sql = "SELECT ChartID FROM tblCharts WHERE EventID = " & EventID & " AND ChartType = 'Event'"
+            sql = "SELECT ChartID FROM tblCharts WHERE EventID = " & eventID & " AND ChartType = 'Event'"
             Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
             If Not rs.EOF Then
                 transitChartID = rs!chartID
@@ -623,7 +589,7 @@ Private Function GetTransitChartIDs(transitType As String, PersonID As Long, Eve
             End If
             rs.Close
             
-            sql = "SELECT ChartID FROM tblCharts WHERE EventID = " & EventID & " AND ChartType = 'Event'"
+            sql = "SELECT ChartID FROM tblCharts WHERE EventID = " & eventID & " AND ChartType = 'Event'"
             Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
             If Not rs.EOF Then
                 transitChartID = rs!chartID
@@ -708,3 +674,168 @@ ErrorHandler:
     Debug.Print "ERROR getting reference PersonID: " & Err.Description
     Set db = Nothing
 End Function
+
+
+
+'=============================
+'=============================
+' Module: modTransitChart
+' Purpose: Compare Viewer Natal vs Session Natal and save transit aspects
+
+' Entry point
+Public Function GenerateTransitChart_ViewerToSession(PersonID As Long, SessionID As Long) As Boolean
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    Dim baseChartID As Long, transitChartID As Long, eventID As Long
+    Dim basePlanets As Collection, transitPlanets As Collection
+    Dim transitType As String: transitType = "Viewer?Session"
+    Dim aspectCount As Long: aspectCount = 0
+    Dim aspectList As DAO.Recordset
+    Dim k As Variant, j As Variant
+    Dim kArr() As Variant, jArr() As Variant
+    Dim transSpeed As Double, natalSpeed As Double
+
+    On Error GoTo ErrorHandler
+
+    Set db = CurrentDb()
+
+    ' 1. Lookup the base natal chart (Viewer)
+    baseChartID = chartExists("Natal", PersonID)
+    If baseChartID = 0 Then
+        MsgBox "No Natal chart found for PersonID=" & PersonID, vbExclamation
+        Exit Function
+    End If
+
+    ' 2. Lookup the session chart (Session)
+    transitChartID = chartExists("Session", , , SessionID)
+    If transitChartID = 0 Then
+        MsgBox "No Session chart found for SessionID=" & SessionID, vbExclamation
+        Exit Function
+    End If
+
+    ' 3. Lookup EventID from tblSessions
+    Set rs = db.OpenRecordset("SELECT EventID FROM tblSessions WHERE SessionID=" & SessionID)
+    If Not rs.EOF Then eventID = rs!eventID Else eventID = 0
+    rs.Close
+
+    ' 4. Delete any existing transit chart for this Viewer-Session combo
+    db.Execute "DELETE FROM tblTransitAspects WHERE PersonID=" & PersonID & _
+               " AND SessionID=" & SessionID & " AND TransitType='" & transitType & "'"
+
+    ' 5. Load planetary positions for each chart
+    Set basePlanets = LoadPlanetaryPositions(baseChartID)
+    Set transitPlanets = LoadPlanetaryPositions(transitChartID)
+
+    ' 6. Load aspects
+    Set aspectList = db.OpenRecordset("SELECT * FROM tblAspects")
+
+    ' 7. Loop through body pairs
+    Dim natalBodyID As Long, transitBodyID As Long
+    Dim natalLon As Double, transitLon As Double, diff As Double
+    Dim orb As Double, exact As Double, applying As Boolean, retro As Boolean
+    Dim aspectID As Long, aspectAngle As Double, aspectType As String
+
+    For Each k In transitPlanets
+        kArr = k
+        transitBodyID = kArr(0)
+        transitLon = kArr(1)
+        transSpeed = CDbl(kArr(2))
+        retro = kArr(3)
+
+        For Each j In basePlanets
+            jArr = j
+            natalBodyID = jArr(0)
+            natalLon = jArr(1)
+            natalSpeed = CDbl(jArr(2))
+            diff = Abs(transitLon - natalLon)
+            If diff > 180 Then diff = 360 - diff
+
+            aspectList.MoveFirst
+            Do While Not aspectList.EOF
+                aspectAngle = aspectList!angle
+                aspectID = aspectList!aspectID
+                aspectType = aspectList!aspectType
+
+                If aspectType = "Major" Then
+                    orb = aspectList!OrbitMajor + GetOrbAdjustment("Major")
+                Else
+                    orb = aspectList!OrbitMinor + GetOrbAdjustment("Minor")
+                End If
+
+                If Abs(diff - aspectAngle) <= orb Then
+                    exact = Abs(diff - aspectAngle)
+                    applying = IsAspectApplying(transitLon, natalLon, transSpeed, natalSpeed, aspectAngle)
+
+                    ' Insert match
+                    db.Execute "INSERT INTO tblTransitAspects (PersonID, SessionID, EventID, TransitType, " & _
+                               "BaseChartID, TransitChartIDRef, NatalBodyID, TransitBodyID, AspectID, " & _
+                               "ExactDegree, OrbitApplying, RetrogradeTransit, TransitLongitude, NatalLongitude, DateCreated) " & _
+                               "VALUES (" & PersonID & "," & SessionID & "," & eventID & ", '" & transitType & "'," & _
+                               baseChartID & "," & transitChartID & "," & natalBodyID & "," & transitBodyID & "," & _
+                               aspectID & "," & Format(exact, "0.000") & "," & IIf(applying, "True", "False") & "," & _
+                               IIf(retro, "True", "False") & "," & Format(transitLon, "0.000") & "," & _
+                               Format(natalLon, "0.000") & ", Now())"
+                    aspectCount = aspectCount + 1
+                    Exit Do
+                End If
+                aspectList.MoveNext
+            Loop
+        Next j
+    Next k
+
+    MsgBox aspectCount & " transit aspects generated.", vbInformation
+    GenerateTransitChart_ViewerToSession = True
+    Exit Function
+
+ErrorHandler:
+    MsgBox "Error generating transit chart: " & Err.Description, vbCritical
+    GenerateTransitChart_ViewerToSession = False
+End Function
+
+' === Helpers ===
+Private Function LoadPlanetaryPositions(chartID As Long) As Collection
+    Dim db As DAO.Database, rs As DAO.Recordset, col As New Collection
+    Set db = CurrentDb()
+    Set rs = db.OpenRecordset("SELECT BodyID, Longitude, LongitudeSpeed FROM tblChartPositions WHERE ChartID=" & chartID)
+    Do While Not rs.EOF
+        Dim arr(3) As Variant
+        arr(0) = rs!BodyID
+        arr(1) = rs!longitude
+        arr(2) = Nz(rs!LongitudeSpeed, 0)
+        arr(3) = (arr(2) < 0)
+        col.Add arr
+        rs.MoveNext
+    Loop
+    rs.Close: Set rs = Nothing: Set LoadPlanetaryPositions = col
+End Function
+
+Private Function GetOrbAdjustment(orbType As String) As Double
+    Dim rs As DAO.Recordset
+    Set rs = CurrentDb.OpenRecordset("SELECT MajorOrbAdj, MinorOrbAdj FROM tblAspectOrb")
+    If orbType = "Major" Then
+        GetOrbAdjustment = Nz(rs!MajorOrbAdj, 0)
+    Else
+        GetOrbAdjustment = Nz(rs!MinorOrbAdj, 0)
+    End If
+    rs.Close
+End Function
+
+Private Function IsAspectApplying(transLon As Double, natalLon As Double, transSpeed As Double, natalSpeed As Double, aspectAngle As Double) As Boolean
+    Dim currentDiff As Double, futureDiff As Double
+    currentDiff = NormalizeAngle(Abs(transLon - natalLon))
+    If currentDiff > 180 Then currentDiff = 360 - currentDiff
+
+    Dim futureTrans As Double: futureTrans = NormalizeAngle(transLon + transSpeed)
+    Dim futureNatal As Double: futureNatal = NormalizeAngle(natalLon + natalSpeed)
+    futureDiff = Abs(futureTrans - futureNatal)
+    If futureDiff > 180 Then futureDiff = 360 - futureDiff
+
+    IsAspectApplying = (Abs(futureDiff - aspectAngle) < Abs(currentDiff - aspectAngle))
+End Function
+
+Private Function NormalizeAngle(deg As Double) As Double
+    NormalizeAngle = deg Mod 360
+    If NormalizeAngle < 0 Then NormalizeAngle = NormalizeAngle + 360
+End Function
+
+

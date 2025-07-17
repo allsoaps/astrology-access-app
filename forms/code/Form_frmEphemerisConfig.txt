@@ -17,6 +17,7 @@ Private Sub btnBrowseEphe_Click()
     
     If folderPath <> "" Then
         Me.EphePath = folderPath
+Debug.Print "btnBrowseEphe_Click me.EphePath setting: " & folderPath
     End If
 End Sub
 
@@ -27,6 +28,7 @@ Private Sub btnBrowseDLL_Click()
     
     If folderPath <> "" Then
         Me.DLLPath = folderPath
+Debug.Print "btnBrowseEphe_Click me.EphePath setting: " & folderPath
     End If
 
 End Sub

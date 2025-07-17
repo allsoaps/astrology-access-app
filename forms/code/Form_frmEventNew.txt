@@ -391,7 +391,7 @@ Private Sub btnSave_Click()
     
     If Not rs.EOF Then
         ' Found a duplicate event
-        lngEventID = rs!EventID
+        lngEventID = rs!eventID
         rs.Close
         
         ' Rollback transaction
@@ -584,7 +584,7 @@ Private Sub FillLocationCoordinates(LocationID As Long)
     Set db = Nothing
 End Sub
 
-Private Function GenerateEventChart(EventID As Long, eventDate As Date, eventTime As Date, lat As Double, lng As Double, LocationID As Long) As Boolean
+Private Function GenerateEventChart(eventID As Long, eventDate As Date, eventTime As Date, lat As Double, lng As Double, LocationID As Long) As Boolean
     ' Calculate planetary positions and save chart data
     On Error GoTo ErrorHandler
     
@@ -619,14 +619,14 @@ Private Function GenerateEventChart(EventID As Long, eventDate As Date, eventTim
     End If
     
     ' Create or retrieve chart record
-    Set rsChart = db.OpenRecordset("SELECT ChartID FROM tblCharts WHERE EventID = " & EventID, dbOpenSnapshot)
+    Set rsChart = db.OpenRecordset("SELECT ChartID FROM tblCharts WHERE EventID = " & eventID, dbOpenSnapshot)
     
     If rsChart.EOF Then
         rsChart.Close
         Set rsChart = db.OpenRecordset("tblCharts", dbOpenDynaset)
         rsChart.AddNew
         rsChart!PersonID = Null  ' Not a person chart
-        rsChart!EventID = EventID
+        rsChart!eventID = eventID
         rsChart!chartType = "Event"
         rsChart!ChartDate = eventDate
         rsChart!ChartTime = eventTime
@@ -751,7 +751,7 @@ Private Function GenerateEventChart(EventID As Long, eventDate As Date, eventTim
     End If
     
     ' Update the EventChartGenerated flag in the Events table
-    db.Execute "UPDATE tblEvents SET EventChartGenerated = True WHERE EventID = " & EventID
+    db.Execute "UPDATE tblEvents SET EventChartGenerated = True WHERE EventID = " & eventID
     
     ' Clean up
     rsPositions.Close
@@ -956,7 +956,7 @@ ErrorHandler:
     MsgBox "Error opening event chart view: " & Err.Description, vbExclamation, "Error"
 End Sub
 
-Private Function GetChartStatus(EventID As Long) As Boolean
+Private Function GetChartStatus(eventID As Long) As Boolean
     Dim db As DAO.Database
     Dim rs As DAO.Recordset
     Dim sql As String
@@ -964,7 +964,7 @@ Private Function GetChartStatus(EventID As Long) As Boolean
     On Error GoTo ErrorHandler
     
     Set db = CurrentDb()
-    sql = "SELECT EventChartGenerated FROM tblEvents WHERE EventID = " & EventID
+    sql = "SELECT EventChartGenerated FROM tblEvents WHERE EventID = " & eventID
     Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
     
     If Not rs.EOF Then
@@ -1014,7 +1014,7 @@ Private Sub UpdateChartControls()
     End If
 End Sub
 
-Private Function GetEventChartID(EventID As Long) As Long
+Private Function GetEventChartID(eventID As Long) As Long
     Dim db As DAO.Database
     Dim rs As DAO.Recordset
     Dim sql As String
@@ -1022,7 +1022,7 @@ Private Function GetEventChartID(EventID As Long) As Long
     On Error GoTo ErrorHandler
     
     Set db = CurrentDb()
-    sql = "SELECT ChartID FROM tblCharts WHERE EventID = " & EventID & " AND ChartType = 'Event'"
+    sql = "SELECT ChartID FROM tblCharts WHERE EventID = " & eventID & " AND ChartType = 'Event'"
     Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
     
     If Not rs.EOF Then

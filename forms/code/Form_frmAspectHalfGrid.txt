@@ -128,7 +128,7 @@ Private Sub LoadChartMetadata()
                 m_PersonID = rs!PersonID
                 LoadViewerInformation
             Case "Event"
-                m_EventID = rs!EventID
+                m_EventID = rs!eventID
                 LoadEventInformation
             Case "Session"
                 m_SessionID = rs!SessionID
@@ -199,12 +199,12 @@ Private Sub PopulateGridHeaders()
     i = 1
     Do While Not rs.EOF And i <= 18
         ' Populate horizontal header
-        Me.Controls("header_" & i).Caption = Nz(rs!Symbol, Left(rs!BodyName, 2))
+        Me.Controls("header_" & i).Caption = Nz(rs!symbol, Left(rs!BodyName, 2))
         
         ' Populate vertical header
-        Me.Controls("sidebar_" & i).Caption = Nz(rs!Symbol, Left(rs!BodyName, 2))
+        Me.Controls("sidebar_" & i).Caption = Nz(rs!symbol, Left(rs!BodyName, 2))
         
-        Debug.Print "Header " & i & ": " & rs!BodyName & " (" & Nz(rs!Symbol, "No Symbol") & ")"
+        Debug.Print "Header " & i & ": " & rs!BodyName & " (" & Nz(rs!symbol, "No Symbol") & ")"
         
         rs.MoveNext
         i = i + 1
