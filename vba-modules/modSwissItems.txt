@@ -15,90 +15,6 @@ Private Const SE_URANUS As Long = 7
 Private Const SE_NEPTUNE As Long = 8
 Private Const SE_PLUTO As Long = 9
 
-' Calculation flags
-Private Const SEFLG_SPEED As Long = 256 ' Return speed values
-Private Const SEFLG_SWIEPH As Long = 2 ' Use Swiss Ephemeris
-
-' Constants for Swiss Ephemeris flags
-Private Const SEFLG_GEOCENTRIC As Long = 0      ' Default
-Private Const SEFLG_HELIOCENTRIC As Long = 8    ' Heliocentric flag
-
-' Module-level variables for DLL paths
-Private m_DLLPath As String
-Private m_EphePath As String
-Private m_IsInitialized As Boolean
-
-
-' Swiss Ephemeris DLL declarations
-#If VBA7 Then
-    #If Win64 Then
-        ' 64-bit declarations
-        Private Declare PtrSafe Function swe_calc_ut Lib "swedll64.dll" ( _
-            ByVal tjd_ut As Double, _
-            ByVal ipl As Long, _
-            ByVal iflag As Long, _
-            ByRef xx As Double, _
-            ByVal serr As String) As Long
-            
-        Private Declare PtrSafe Function swe_set_ephe_path Lib "swedll64.dll" ( _
-            ByVal path As String) As Long
-            
-        Private Declare PtrSafe Function swe_close Lib "swedll64.dll" () As Long
-        
-        Private Declare PtrSafe Function swe_houses Lib "swedll64.dll" ( _
-            ByVal tjd_ut As Double, _
-            ByVal geolat As Double, _
-            ByVal geolon As Double, _
-            ByVal hsys As Long, _
-            ByRef cusps As Double, _
-            ByRef ascmc As Double) As Long
-    #Else
-        ' 32-bit declarations with PtrSafe (VBA7 but not 64-bit)
-        Private Declare PtrSafe Function swe_calc_ut Lib "swedll32.dll" ( _
-            ByVal tjd_ut As Double, _
-            ByVal ipl As Long, _
-            ByVal iflag As Long, _
-            ByRef xx As Double, _
-            ByVal serr As String) As Long
-            
-        Private Declare PtrSafe Function swe_set_ephe_path Lib "swedll32.dll" ( _
-            ByVal path As String) As Long
-            
-        Private Declare PtrSafe Function swe_close Lib "swedll32.dll" () As Long
-        
-        Private Declare PtrSafe Function swe_houses Lib "swedll32.dll" ( _
-            ByVal tjd_ut As Double, _
-            ByVal geolat As Double, _
-            ByVal geolon As Double, _
-            ByVal hsys As Long, _
-            ByRef cusps As Double, _
-            ByRef ascmc As Double) As Long
-    #End If
-#Else
-    ' 32-bit declarations (pre-VBA7)
-'    Private Declare Function swe_calc_ut Lib "swedll32.dll" ( _
-'        ByVal tjd_ut As Double, _
-'        ByVal ipl As Long, _
-'        ByVal iflag As Long, _
-'        ByRef xx As Double, _
-'        ByVal serr As String) As Long
-'
-'    Private Declare Function swe_set_ephe_path Lib "swedll32.dll" ( _
-'        ByVal path As String) As Long
-'
-'    Private Declare Function swe_close Lib "swedll32.dll" () As Long
-'
-'    Private Declare Function swe_houses Lib "swedll32.dll" ( _
-'        ByVal tjd_ut As Double, _
-'        ByVal geolat As Double, _
-'        ByVal geolon As Double, _
-'        ByVal hsys As Long, _
-'        ByRef cusps As Double, _
-'        ByRef ascmc As Double) As Long
-#End If
-' Add these constants to the top of your modSwissItems module
-' (after the existing planet constants)
-
 ' Additional planet/body constants for chart calculation
 Public Const SE_CHIRON As Long = 15
 Public Const SE_CERES As Long = 17
@@ -115,6 +31,68 @@ Public Const SE_WHOLE_SIGN As Long = 87  ' ASCII value of 'W'
 Public Const SEFLG_SPEED_PUBLIC As Long = 256
 Public Const SEFLG_SWIEPH_PUBLIC As Long = 2
 Public Const SEFLG_HELIOCENTRIC_PUBLIC As Long = 8
+
+
+' Calculation flags
+Private Const SEFLG_SPEED As Long = 256 ' Return speed values
+Private Const SEFLG_SWIEPH As Long = 2 ' Use Swiss Ephemeris
+
+' Constants for Swiss Ephemeris flags
+Private Const SEFLG_GEOCENTRIC As Long = 0      ' Default
+Private Const SEFLG_HELIOCENTRIC As Long = 8    ' Heliocentric flag
+
+' Module-level variables for DLL paths
+Private m_DLLPath As String
+Private m_EphePath As String
+Private m_IsInitialized As Boolean
+
+
+'=======================================
+
+
+' === Core Swiss Ephemeris Declarations for 64-bit VBA ===
+
+Private Declare PtrSafe Function swe_calc_ut Lib "swedll64.dll" _
+( _
+    ByVal tjd_ut As Double, _
+    ByVal ipl As Long, _
+    ByVal iflag As Long, _
+    ByRef x As Double, _
+    ByVal serr As String _
+) As Long   ' x must be first of six array elements
+
+Private Declare PtrSafe Sub swe_set_ephe_path Lib "swedll64.dll" _
+( _
+    ByVal path As String _
+)
+
+Private Declare PtrSafe Function swe_close Lib "swedll64.dll" _
+( _
+) As Long
+
+Private Declare PtrSafe Function swe_houses Lib "swedll64.dll" _
+( _
+    ByVal tjd_ut As Double, _
+    ByVal geolat As Double, _
+    ByVal geolon As Double, _
+    ByVal hsys As Long, _
+    ByRef cusps As Double, _
+    ByRef ascmc As Double _
+) As Long
+
+Private Declare PtrSafe Function swe_calc Lib "swedll64.dll" _
+( _
+    ByVal tjd As Double, _
+    ByVal ipl As Long, _
+    ByVal iflag As Long, _
+    ByRef x As Double, _
+    ByVal serr As String _
+) As Long
+
+
+
+
+'=======================================
 
 ' Also add this public function to get the Swiss Ephemeris constants
 Public Function GetSwissEphConstant(planetName As String) As Long
@@ -640,14 +618,24 @@ Public Function SafeCalcUT(jd As Double, planet As Long, flags As Long, ByRef lo
 
     ' Initialize the error string buffer - THIS WAS MISSING
     serr = String(255, vbNullChar)
+Debug.Print "**serr  before swe_calc_ut: " & serr & "***"
+
+
+'m_EphePath = Nz(rs!EphePath, "")
+If Trim$(m_EphePath) = "" Then m_EphePath = GetDefaultEphePath()
 
     result = swe_calc_ut(jd, planet, flags, xx(0), serr)
+
+Debug.Print "**result  from SafeCalcUT: " & result
+
 
     If result < 0 Then
         If showMsg Then MsgBox "Swiss Ephemeris Error: " & Trim$(serr), vbExclamation
         SafeCalcUT = False
     Else
-    Debug.Print "SafeCalcUT serr value: " & Trim$(serr)
+    
+        Debug.Print "SafeCalcUT serr value: " & Trim$(serr)
+        
         lonOut = xx(0)
         SafeCalcUT = True
     End If
@@ -772,20 +760,19 @@ Public Function SafeSetEphePath(EphePath As String, Optional showMsg As Boolean 
         Exit Function
     End If
 
-    Dim result As Long
-    result = swe_set_ephe_path(EphePath)
+    Debug.Print "Calling swe_set_ephe_path with: " & EphePath
+    Call swe_set_ephe_path(EphePath) ' now declared as Sub, no return value
 
-    If result = 0 Then
-        If showMsg Then MsgBox "swe_set_ephe_path failed for: " & EphePath, vbCritical, "Swiss Ephemeris"
-        SafeSetEphePath = False
-    Else
-        Debug.Print "Swiss Ephemeris path set to: " & EphePath
-        SafeSetEphePath = True
+    ' Optional: test if file exists in path
+    If Dir(EphePath & "\sepl_18.se1") = "" And Dir(EphePath & "\sepl_18.sel") = "" Then
+        If showMsg Then MsgBox "Warning: Ephemeris path set, but expected data file not found in: " & EphePath, vbExclamation
     End If
+
+    SafeSetEphePath = True
     Exit Function
 
 Fail:
-    If showMsg Then MsgBox "Error calling swe_set_ephe_path: " & Err.Description, vbCritical, "Swiss Ephemeris"
+    If showMsg Then MsgBox "Error calling swe_set_ephe_path: " & Err.Description, vbCritical
     SafeSetEphePath = False
 End Function
 

@@ -50,9 +50,7 @@ Private Sub btnViewTransitChart_Click()
     ' Pass the needed context to frmAspectGrid using openArgs
     Dim args As String
     args = m_PersonID & "|" & m_EventID & "|" & m_SessionID & "|Viewer_Session"
-'    DoCmd.OpenForm "frmAspectGrid", acNormal, , , , , args
-    DoCmd.OpenForm "frmAspectGridTabs", acNormal, , , , , args
-    
+    DoCmd.OpenForm "frmAspectGrid", acNormal, , , , , args
     Exit Sub
 
 ErrorHandler:

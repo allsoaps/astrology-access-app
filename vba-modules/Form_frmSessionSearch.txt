@@ -22,60 +22,11 @@ Option Explicit
 Private m_UpdatingViewer As Boolean
 Private m_UpdatingEvent As Boolean
 
-Private m_PersonID As Long
-Private m_EventID As Long
-Private m_SessionID As Long
-
-
-Private Sub btnAddSession_Click()
-    On Error GoTo ErrorHandler
-    
-'    m_PersonID = Nz(Me.lstStudents.value, 0)
-    If Me.cboViewer > 0 Then
-        m_PersonID = Me.lstSessions.value
-        m_EventID = Me.lstSessions.Column(1)
-    ElseIf Me.cboEvent > 0 Then
-        m_PersonID = Me.lstSessions.Column(1)
-        m_EventID = Me.lstSessions.value
-    Else
-        MsgBox "Please select a session to view impressions.", vbInformation, "No Selection"
-        Exit Sub
-    End If
-
-    ' Check for a valid PersonID. This form is for editing, so it must exist.
-    If IsNull(m_PersonID) Or m_PersonID = 0 Then
-        MsgBox "Cannot add/edit sessions. Select a record first.", vbExclamation, "Select a Record Required"
-        Exit Sub
-    End If
-    
-    If IsNull(m_EventID) Or m_EventID = 0 Then
-        MsgBox "Cannot add/edit sessions. Select a record first.", vbExclamation, "Select a Record Required"
-        Exit Sub
-    End If
-    
-    ' Pass the context to the Session Manager form.
-    ' Format: "PersonID=123"
-    Dim openArgs As String
-    openArgs = "PersonID|" & m_PersonID & "|EventID|" & m_EventID
-    
-    ' Open the Session Manager form
-    DoCmd.OpenForm "frmSessionManager", acNormal, , , , , openArgs
-    
-
-   
-    Exit Sub
-
-ErrorHandler:
-    MsgBox "An error occurred opening the Session Manager: " & Err.Description, vbCritical, "Error"
-End Sub
-
-
-
 '================'
 ' FORM EVENTS    '
 '================'
 
-Private Sub Form_load()
+Private Sub Form_Load()
     On Error GoTo ErrorHandler
     
     ' Initialize flags
@@ -90,13 +41,11 @@ Private Sub Form_load()
     Me.cboViewer = Null
     Me.cboEvent = Null
     
-    m_PersonID = 0
-    m_EventID = 0
-    m_SessionID = 0
-    
     ' Initialize results display
     Me.lblResultsHeader.Visible = False
     lstSessions.RowSource = ""
+    
+    ClearSubformResults
     
     Exit Sub
     
@@ -122,48 +71,38 @@ Private Sub PopulateListBox()
             Me.lblHdr1.Caption = "Assigned Event(s)"
             
             sql = "SELECT " & _
-              "a.PersonID, e.EventID, e.EventName, " & _
-              "Nz(s.SessionID, 0) AS SessionID, " & _
-              "s.SessionDate, s.SessionStartTime, i.ImpressionNbr, i.SuccessAverage " & _
+              "a.PersonID, s.EventID, e.EventName, i.SessionID, s.SessionDate, s.SessionStartTime, i.ImpressionNbr, i.SuccessAverage " & _
               "FROM ((tblAssignments a " & _
               "LEFT JOIN tblEvents e ON a.EventID = e.EventID) " & _
               "LEFT JOIN tblSessions s ON (a.PersonID = s.PersonID AND a.EventID = s.EventID AND (s.DateDeleted IS NULL OR s.DateDeleted = #1/1/1900#))) " & _
-              "LEFT JOIN (SELECT DISTINCT(SessionID), Format(AVG(Success), '0.00') AS SuccessAverage, COUNT(SketchID) AS ImpressionNbr " & _
+              "LEFT JOIN (SELECT DISTINCT(SessionID), AVG(Success) AS SuccessAverage, COUNT(SketchID) AS ImpressionNbr " & _
               "FROM tblImpressions WHERE (DateDeleted IS NULL OR DateDeleted = #1/1/1900#) GROUP BY SessionID) i ON s.SessionID = i.SessionID " & _
               "WHERE a.PersonID = " & Me.cboViewer.value & " " & _
               "ORDER BY s.SessionDate DESC, s.SessionStartTime"
-              
          ElseIf Not IsNull(Me.cboEvent.value) Then
             .ColumnCount = 8
             .ColumnWidths = "0cm;.80cm;8cm;0cm;2.35cm;2.35cm;2cm;2cm"
-            
             Me.lblHdr1.Caption = "Assigned Viewer(s)"
             
             sql = "SELECT " & _
-              "a.EventID, p.PersonID, p.FirstName & ' " & "' & p.LastName AS FullName, " & _
-              "Nz(s.SessionID, 0) AS SessionID, " & _
-              "s.SessionDate, s.SessionStartTime, " & _
+              "a.EventID, p.PersonID, p.FirstName & ' " & "' & p.LastName AS FullName, i.SessionID, s.SessionDate, s.SessionStartTime, " & _
               "i.ImpressionNbr, i.SuccessAverage  " & _
               "FROM ((tblAssignments a " & _
               "LEFT JOIN tblPeople p ON a.PersonID = p.PersonID) " & _
               "LEFT JOIN tblSessions s ON (a.PersonID = s.PersonID AND a.EventID = s.EventID AND (s.DateDeleted IS NULL OR s.DateDeleted = #1/1/1900#))) " & _
-              "LEFT JOIN (SELECT DISTINCT(SessionID), Format(AVG(Success), '0.00') AS SuccessAverage, COUNT(SketchID) AS ImpressionNbr " & _
+              "LEFT JOIN (SELECT DISTINCT(SessionID), AVG(Success) AS SuccessAverage, COUNT(SketchID) AS ImpressionNbr " & _
               "FROM tblImpressions WHERE (DateDeleted IS NULL OR DateDeleted = #1/1/1900#) GROUP BY SessionID) i ON s.SessionID = i.SessionID " & _
               "WHERE a.EventID = " & Me.cboEvent.value & " " & _
               "ORDER BY p.LastName, p.FirstName"
-       
-       
-'          "Format((SELECT AVG(i.Success) FROM tblImpressions i WHERE i.SessionID = s.SessionID " & _
-'          " AND (i.DateDeleted IS NULL OR i.DateDeleted = #1/1/1900#)), '0.00'))) AS AvgSuccess, " & _
-
-       
        
         End If
     
         .RowSource = sql
 
      End With
-        
+    
+'    Me.lstSessions.Requery
+    
     Exit Sub
     
 ErrorHandler:
@@ -187,12 +126,6 @@ Private Sub cboViewer_AfterUpdate()
     
     ' Clear the event selection to prevent confusion
     Me.cboEvent = Null
-    
-    m_PersonID = 0
-    m_EventID = 0
-    m_SessionID = 0
-    
-    m_PersonID = cboViewer.value
     
     ' If we have a viewer selected, we're now in "Viewer Mode"
     ' The search will show all sessions for this viewer
@@ -219,12 +152,6 @@ Private Sub cboEvent_AfterUpdate()
     
     ' Clear the viewer selection to prevent confusion
     Me.cboViewer = Null
-    
-    m_PersonID = 0
-    m_EventID = 0
-    m_SessionID = 0
-    
-    m_EventID = cboEvent.value
     
     ' If we have an event selected, we're now in "Event Mode"
     ' The search will show all viewers assigned to this event
@@ -253,27 +180,15 @@ Private Sub btnViewAssociatedImpressions_Click()
     Dim hasImpressions As Boolean
     Dim SessionID As Long
    
-    If Me.cboViewer > 0 Then
-        m_PersonID = Me.lstSessions.value
-        m_EventID = Me.lstSessions.Column(1)
-    ElseIf Me.cboEvent > 0 Then
-        m_PersonID = Me.lstSessions.Column(1)
-        m_EventID = Me.lstSessions.value
-    Else
+    Dim sid As Long
+    
+    sid = Nz(Me.lstSessions.value, 0)
+    If sid = 0 Then
         MsgBox "Please select a session to view impressions.", vbInformation, "No Selection"
         Exit Sub
     End If
-        
-    If Nz(Me.lstSessions.Column(3), 0) = 0 Then
-        MsgBox "No session exists for this viewer and event. Please create a session first using the Viewer or Event form.", _
-               vbExclamation, "No Session Found"
-        Exit Sub
-    Else
-          m_SessionID = Me.lstSessions.Column(3)
-    End If
-        
-    SessionID = m_SessionID
     
+    SessionID = GetSessionID(Nz(Me.cboViewer.value, 0), Nz(Me.cboEvent.value, 0))
     sessionExists = (SessionID > 0)
     
     If sessionExists Then
@@ -324,9 +239,19 @@ Private Sub ClearAllSelections()
     Me.cboViewer = Null
     Me.cboEvent = Null
     Me.lblResultsHeader.Visible = False
+    ClearSubformResults
     
     m_UpdatingViewer = False
     m_UpdatingEvent = False
+End Sub
+
+Private Sub ClearSubformResults()
+    ' PURPOSE: Clear the subform results display
+    ' CALLED FROM: Form_Load, btnSearch_Click, ClearAllSelections
+    
+    On Error Resume Next
+    'Me.subResults.Form.RecordSource = ""
+    On Error GoTo 0
 End Sub
 
 Private Sub RefreshCurrentSearch()
@@ -336,11 +261,8 @@ Private Sub RefreshCurrentSearch()
     If Not IsNull(Me.cboViewer) Then
         SearchByViewer Me.cboViewer
     ElseIf Not IsNull(Me.cboEvent) Then
-        SearchByEvent Me.cboEvent
+'        SearchByEvent Me.cboEvent
     End If
-    
-    Me.lstSessions.Requery
-    
 End Sub
 
 Private Function GetSessionID(PersonID As Long, EventID As Long) As Long
@@ -356,9 +278,6 @@ Private Function GetSessionID(PersonID As Long, EventID As Long) As Long
     Dim sql As String
     
     Set db = CurrentDb()
-    
-Debug.Print "PersonID: " & PersonID & " EventID: " & EventID
-    
     If PersonID > 0 Then
         sql = "SELECT SessionID FROM tblSessions WHERE PersonID = " & PersonID
     ElseIf EventID > 0 Then
@@ -499,81 +418,38 @@ Private Sub SearchByViewer(ViewerPersonID As Long)
           "INNER JOIN tblAssignments a ON e.EventID = a.EventID " & _
           "WHERE a.PersonID = " & ViewerPersonID & " " & _
           "ORDER BY e.EventDate DESC"
-            
+    
     Exit Sub
     
 ErrorHandler:
     MsgBox "Error: " & Err.Description, vbCritical
 End Sub
 
-Private Sub SearchByEvent(ViewerEventID As Long)
-    On Error GoTo ErrorHandler
-    
-    Dim sql As String
-    sql = "SELECT e.EventID, e.EventName, e.EventDate " & _
-          "FROM tblEvents e " & _
-          "INNER JOIN tblAssignments a ON e.EventID = a.EventID " & _
-          "WHERE a.EventID = " & ViewerEventID & " " & _
-          "ORDER BY e.EventDate DESC"
+
+Private Sub SetupListBox()
+    With Me.lstSessions
+        .RowSourceType = "Table/Query"
+        .ColumnCount = 7
+        .BoundColumn = 1
+        .ColumnHeads = False
+        .ColumnWidths = ".70cm;6.5cm;2.25cm;2.35cm;1.95cm;1.75cm;1.75cm"
+        
+        .RowSource = "SELECT " & _
+          "a.PersonID, e.EventID, e.EventName, " & _
+          "IIf(e.EventDate IS NULL, 'blank', Format(e.EventDate,'mm/dd/yyyy')) AS EventDate, " & _
+          "IIf(s.SessionID IS NULL, '0', " & _
+          "(SELECT COUNT(*) FROM tblImpressions i WHERE i.SessionID = s.SessionID " & _
+          " AND (i.DateDeleted IS NULL OR i.DateDeleted = #1/1/1900#))) AS ImpressionCount, " & _
+          "IIf(s.SessionID IS NULL, '0', " & _
+          "IIf((SELECT COUNT(*) FROM tblImpressions i WHERE i.SessionID = s.SessionID " & _
+          " AND (i.DateDeleted IS NULL OR i.DateDeleted = #1/1/1900#)) = 0, '0', " & _
+          "Format((SELECT AVG(i.Success) FROM tblImpressions i WHERE i.SessionID = s.SessionID " & _
+          " AND (i.DateDeleted IS NULL OR i.DateDeleted = #1/1/1900#)), '0.00'))) AS AvgSuccess, " & _
+          "FROM tblPeople p " & _
+          "INNER JOIN tblAssignments a ON p.PersonID = a.PersonID " & _
+          "LEFT JOIN tblSessions s ON p.PersonID = s.PersonID AND s.EventID = " & Me.cboEvent.value & " " & _
+          "WHERE a.PersonID = " & Me.cboViewer.value & " " & _
+          "ORDER BY p.LastName, p.FirstName"
           
-    Exit Sub
-    
-ErrorHandler:
-    MsgBox "Error: " & Err.Description, vbCritical
-End Sub
-
-Private Sub lstSessions_DblClick(Cancel As Integer)
-    btnViewAssociatedImpressions_Click
-End Sub
-
-Private Sub btnViewTransitChart_Click()
-    On Error GoTo ErrorHandler
-
-    If Me.cboViewer > 0 Then
-        m_PersonID = Me.lstSessions.value
-        m_EventID = Me.lstSessions.Column(1)
-    ElseIf Me.cboEvent > 0 Then
-        m_PersonID = Me.lstSessions.Column(1)
-        m_EventID = Me.lstSessions.value
-    Else
-        MsgBox "Please select a session to view impressions.", vbInformation, "No Selection"
-        Exit Sub
-    End If
-
-    If Nz(Me.lstSessions.Column(3), 0) = 0 Then
-        MsgBox "No session exists for this viewer and event. Please create a session first using the Viewer or Event form.", _
-               vbExclamation, "No Session Found"
-        Exit Sub
-    Else
-          m_SessionID = Me.lstSessions.Column(3)
-    End If
-
-    If m_SessionID = 0 Or m_PersonID = 0 Or m_EventID = 0 Then
-        MsgBox "Please ensure a Viewer and Event are selected.", vbExclamation
-        Exit Sub
-    End If
-
-    ' Ensure the transit data is generated
-    Dim Success As Boolean
-    Success = GenerateTransitChartEx("Viewer_Session", m_PersonID, m_EventID, m_SessionID)
-
-    If Not Success Then
-        MsgBox "Transit chart generation failed.", vbCritical
-        Exit Sub
-    End If
-
-gPersonID = m_PersonID
-gEventID = m_EventID
-gSessionID = m_SessionID
-gTransitType = "Viewer_Session"
-
-    ' Pass the needed context to frmAspectGrid using openArgs
-    Dim args As String
-    args = m_PersonID & "|" & m_EventID & "|" & m_SessionID & "|Viewer_Session"
-'    DoCmd.OpenForm "frmAspectGrid", acNormal, , , , , args
-    DoCmd.OpenForm "frmAspectGridTabs", acNormal, , , , , args
-    Exit Sub
-
-ErrorHandler:
-    MsgBox "Error in View Transit Chart: " & Err.Description, vbCritical
+    End With
 End Sub

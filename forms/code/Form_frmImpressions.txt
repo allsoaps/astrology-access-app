@@ -65,6 +65,7 @@ Private Sub cboPerception_BeforeUpdate(Cancel As Integer)
     AssignSketchIDIfNeeded
 End Sub
 
+
 Private Sub txtSuccess_BeforeUpdate(Cancel As Integer)
     AssignSketchIDIfNeeded
 End Sub
@@ -74,19 +75,13 @@ End Sub
 '================'
 
 Private Sub btnClose_Click()
-    ' Always warn user about losing changes
-    If MsgBox("All unsaved changes will be lost. Are you sure you want to close?", _
-              vbYesNo + vbQuestion + vbDefaultButton2, "Close Form") = vbYes Then
-        
-        ' User confirmed - close without saving
         ' Cancel any pending edits
         If Me.Dirty Then
             DoCmd.RunCommand acCmdUndo
         End If
         
         DoCmd.Close acForm, Me.name, acSaveNo
-    End If
-    ' If user clicks No, do nothing (stay on form)
+
 End Sub
 
 Private Sub btnSave_Click()
@@ -356,25 +351,3 @@ ErrorHandler:
 End Sub
 
 
-
-Private Sub Form_Current()
-    ' This fires every time you move to a different record
-    On Error Resume Next
-    
-    If Not IsNull(Me.txtSuccess) And IsNumeric(Me.txtSuccess) Then
-        Dim successValue As Double
-        successValue = CDbl(Me.txtSuccess.value)
-        
-        If successValue >= 0.85 Then
-            Me.txtSuccess.backColor = RGB(155, 255, 150)  ' Light green for high success
-        ElseIf successValue >= 0.65 Then
-            Me.txtSuccess.backColor = RGB(255, 255, 0)    ' Yellow for medium success
-        Else
-            Me.txtSuccess.backColor = RGB(255, 155, 155)  ' Light red for low success
-        End If
-    Else
-        Me.txtSuccess.backColor = RGB(255, 255, 255)      ' White for null/invalid values
-    End If
-    
-    On Error GoTo 0
-End Sub
