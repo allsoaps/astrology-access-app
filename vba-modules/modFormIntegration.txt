@@ -12,14 +12,14 @@ Option Explicit
 
 ' Function to be called from frmStudentNew "Generate Natal Chart" button
 Public Function GenerateNatalChartFromForm(PersonID As Long) As Boolean
-    Dim chartID As Long
+    Dim ChartID As Long
     
     On Error GoTo ErrorHandler
     
     ' Check if chart already exists
 '    chartID = modChartCalculation.ChartExists(CHART_TYPE_NATAL, PersonID)
     
-    If chartID > 0 Then
+    If ChartID > 0 Then
         Dim response As VbMsgBoxResult
         response = MsgBox("A natal chart already exists for this person. Do you want to regenerate it?", vbYesNo + vbQuestion, "Chart Exists")
         
@@ -27,10 +27,10 @@ Public Function GenerateNatalChartFromForm(PersonID As Long) As Boolean
 '            chartID = modChartCalculation.RegenerateChart(CHART_TYPE_NATAL, PersonID)
         End If
     Else
-        chartID = modChartCalculation.CreateNatalChart(PersonID)
+        ChartID = modChartCalculation.CreateNatalChart(PersonID)
     End If
     
-    If chartID > 0 Then
+    If ChartID > 0 Then
         ' Update the natal chart generated flag
 '        modChartCalculation.UpdateNatalChartFlag PersonID, True
         
@@ -55,14 +55,14 @@ End Function
 
 ' Function to be called from frmStudentEdit "View Natal Chart" button
 Public Function ViewNatalChartFromForm(PersonID As Long) As Boolean
-    Dim chartID As Long
+    Dim ChartID As Long
     
     On Error GoTo ErrorHandler
     
     ' Check if chart exists
 '    chartID = modChartCalculation.ChartExists(CHART_TYPE_NATAL, PersonID)
     
-    If chartID = 0 Then
+    If ChartID = 0 Then
         Dim response As VbMsgBoxResult
         response = MsgBox("No natal chart exists for this person. Would you like to generate one now?", vbYesNo + vbQuestion, "No Chart Found")
         
@@ -80,7 +80,7 @@ Public Function ViewNatalChartFromForm(PersonID As Long) As Boolean
     End If
     
     ' Show the aspect grid
-    modCharts.ShowChartAspectGrid chartID
+    modCharts.ShowChartAspectGrid ChartID
     ViewNatalChartFromForm = True
     
     Exit Function
@@ -124,7 +124,7 @@ Public Function GetOrCreateLocationFromForm(City As String, StateProvince As Str
         rs!City = City
         rs![State/Province] = IIf(Len(Trim(StateProvince)) > 0, StateProvince, Null)
         rs!Country = Country
-        rs!latitude = lat
+        rs!Latitude = lat
         rs!longitude = lng
         rs!DateCreated = Now()
         rs!DateUpdated = Now()
@@ -156,14 +156,14 @@ End Function
 
 ' Function to be called from frmSessionManager "Generate Chart" button
 Public Function GenerateSessionChartFromForm(SessionID As Long) As Boolean
-    Dim chartID As Long
+    Dim ChartID As Long
     
     On Error GoTo ErrorHandler
     
     ' Check if chart already exists
 '    chartID = modChartCalculation.ChartExists(CHART_TYPE_SESSION, , , SessionID)
     
-    If chartID > 0 Then
+    If ChartID > 0 Then
         Dim response As VbMsgBoxResult
         response = MsgBox("A session chart already exists. Do you want to regenerate it?", vbYesNo + vbQuestion, "Chart Exists")
         
@@ -171,10 +171,10 @@ Public Function GenerateSessionChartFromForm(SessionID As Long) As Boolean
 '            chartID = modChartCalculation.RegenerateChart(CHART_TYPE_SESSION, , , SessionID)
         End If
     Else
-        chartID = modChartCalculation.CreateSessionChart(SessionID)
+        ChartID = modChartCalculation.CreateSessionChart(SessionID)
     End If
     
-    If chartID > 0 Then
+    If ChartID > 0 Then
         ' Update the form checkbox if it exists
         If Forms.IsLoaded("frmSessionManager") Then
             Forms("frmSessionManager")!chkSessionChartGenerated = True
@@ -196,14 +196,14 @@ End Function
 
 ' Function to be called from frmSessionManager "View Chart" button
 Public Function ViewSessionChartFromForm(SessionID As Long) As Boolean
-    Dim chartID As Long
+    Dim ChartID As Long
     
     On Error GoTo ErrorHandler
     
     ' Check if chart exists
 '    chartID = modChartCalculation.ChartExists(CHART_TYPE_SESSION, , , SessionID)
     
-    If chartID = 0 Then
+    If ChartID = 0 Then
         Dim response As VbMsgBoxResult
         response = MsgBox("No session chart exists. Would you like to generate one now?", vbYesNo + vbQuestion, "No Chart Found")
         
@@ -221,7 +221,7 @@ Public Function ViewSessionChartFromForm(SessionID As Long) As Boolean
     End If
     
     ' Show the aspect grid
-    modCharts.ShowChartAspectGrid chartID
+    modCharts.ShowChartAspectGrid ChartID
     ViewSessionChartFromForm = True
     
     Exit Function
@@ -237,14 +237,14 @@ End Function
 
 ' Function to be called from frmEventNew for event chart generation
 Public Function GenerateEventChartFromForm(eventID As Long) As Boolean
-    Dim chartID As Long
+    Dim ChartID As Long
     
     On Error GoTo ErrorHandler
     
     ' Check if chart already exists
 '    chartID = modChartCalculation.ChartExists(CHART_TYPE_EVENT, , eventID)
     
-    If chartID > 0 Then
+    If ChartID > 0 Then
         Dim response As VbMsgBoxResult
         response = MsgBox("An event chart already exists. Do you want to regenerate it?", vbYesNo + vbQuestion, "Chart Exists")
         
@@ -252,10 +252,10 @@ Public Function GenerateEventChartFromForm(eventID As Long) As Boolean
 '            chartID = modChartCalculation.RegenerateChart(CHART_TYPE_EVENT, , eventID)
         End If
     Else
-        chartID = modChartCalculation.CreateEventChart(eventID)
+        ChartID = modChartCalculation.CreateEventChart(eventID)
     End If
     
-    If chartID > 0 Then
+    If ChartID > 0 Then
         MsgBox "Event chart generated successfully!", vbInformation, "Success"
         GenerateEventChartFromForm = True
     Else
@@ -272,14 +272,14 @@ End Function
 
 ' Function to view event chart
 Public Function ViewEventChartFromForm(eventID As Long) As Boolean
-    Dim chartID As Long
+    Dim ChartID As Long
     
     On Error GoTo ErrorHandler
     
     ' Check if chart exists
 '    chartID = modChartCalculation.ChartExists(CHART_TYPE_EVENT, , eventID)
     
-    If chartID = 0 Then
+    If ChartID = 0 Then
         Dim response As VbMsgBoxResult
         response = MsgBox("No event chart exists. Would you like to generate one now?", vbYesNo + vbQuestion, "No Chart Found")
         
@@ -297,7 +297,7 @@ Public Function ViewEventChartFromForm(eventID As Long) As Boolean
     End If
     
     ' Show the aspect grid
-    modCharts.ShowChartAspectGrid chartID
+    modCharts.ShowChartAspectGrid ChartID
     ViewEventChartFromForm = True
     
     Exit Function
@@ -449,7 +449,7 @@ ErrorHandler:
 End Function
 
 ' Function to get chart summary for display
-Public Function GetChartSummary(chartID As Long) As String
+Public Function GetChartSummary(ChartID As Long) As String
     Dim db As DAO.Database
     Dim rs As DAO.Recordset
     Dim sql As String
@@ -458,7 +458,7 @@ Public Function GetChartSummary(chartID As Long) As String
     On Error GoTo ErrorHandler
     
     Set db = CurrentDb()
-    sql = "SELECT ChartType, ChartDate, ChartTime FROM tblCharts WHERE ChartID = " & chartID
+    sql = "SELECT ChartType, ChartDate, ChartTime FROM tblCharts WHERE ChartID = " & ChartID
     Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
     
     If Not rs.EOF Then

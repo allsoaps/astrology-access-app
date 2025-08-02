@@ -17,7 +17,7 @@ Private Sub btnBrowseEphe_Click()
     
     If folderPath <> "" Then
         Me.EphePath = folderPath
-Debug.Print "btnBrowseEphe_Click me.EphePath setting: " & folderPath
+        Me.Requery
     End If
 End Sub
 
@@ -28,7 +28,7 @@ Private Sub btnBrowseDLL_Click()
     
     If folderPath <> "" Then
         Me.DLLPath = folderPath
-Debug.Print "btnBrowseEphe_Click me.EphePath setting: " & folderPath
+        Me.Requery
     End If
 
 End Sub
@@ -64,6 +64,8 @@ Private Sub btnSaveSwiss_Click()
     
     ' Show confirmation message
     MsgBox "Swiss Ephemeris settings saved successfully.", vbInformation, "Save Complete"
+    
+    Me.Requery
     
     ' Close the form and return to previous form
     DoCmd.Close acForm, Me.name

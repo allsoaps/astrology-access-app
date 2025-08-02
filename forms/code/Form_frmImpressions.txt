@@ -12,6 +12,34 @@ Option Explicit
 
 ' Form-level variables
 Private m_SessionID As Long
+Private m_TargetShape As String
+
+' Add these new variables for tolerance rules
+Private Type ToleranceRule
+    score As Double
+    colorName As String
+    RGBValue As Long
+End Type
+
+Private m_Tolerances() As ToleranceRule
+Private m_ToleranceCount As Integer
+
+Private Sub cboPerception_Change()
+    If Me.cboPerception.value = m_TargetShape Then
+        Me.txtSuccess.value = 1
+        Exit Sub
+    Else
+        If Me.cboPerception.value <> m_TargetShape And (Me.cboPerception.value = "Curved" Or Me.cboPerception.value = "Straight") Then
+            Me.txtSuccess.value = 0
+            Exit Sub
+        Else
+            Me.txtSuccess.value = Null
+            Exit Sub
+     
+        End If
+    End If
+    
+End Sub
 
 '================'
 ' FORM EVENTS    '
@@ -19,45 +47,18 @@ Private m_SessionID As Long
 
 Private Sub Form_Open(Cancel As Integer)
     ' Get the SessionID from OpenArgs
-    If Not IsNull(Me.openArgs) And IsNumeric(Me.openArgs) Then
-        m_SessionID = CLng(Me.openArgs)
+    Dim strArgs() As String
+    
+    If Not IsNull(Me.openArgs) Then
+        strArgs() = Split(Me.openArgs, "|")
+        
+        m_SessionID = CLng(strArgs(0))
+        m_TargetShape = CStr(strArgs(1))
     Else
         MsgBox "Error: No valid SessionID provided.", vbCritical, "Form Error"
         Cancel = True
         Exit Sub
     End If
-End Sub
-
-Private Sub Form_Load()
-    On Error GoTo ErrorHandler
-    
-    ' Simple direct binding to main table with filter
-    Dim recordSourceSQL As String
-    recordSourceSQL = "SELECT * FROM tblImpressions " & _
-                     "WHERE SessionID = " & m_SessionID & _
-                     " AND (DateDeleted IS NULL OR DateDeleted = #1/1/1900#) " & _
-                     "ORDER BY SketchID"
-    
-    Me.RecordSource = recordSourceSQL
-    
-    ' Force a requery to ensure data loads
-    Me.Requery
-    
-    ' Minimal control setup
-    SetupControls
-    LoadSessionInfo
-    
-    ' Debug: Check if records were loaded
-    If Me.RecordsetClone.recordCount > 0 Then
-        DoCmd.GoToRecord , , acFirst
-    Else
-        DoCmd.GoToRecord , , acNewRec
-    End If
-    
-    Exit Sub
-
-ErrorHandler:
-    MsgBox "Error loading impressions form: " & Err.Description, vbCritical, "Form Load Error"
 End Sub
 
 ' Immediately assign SketchID when user starts entering data
@@ -154,8 +155,8 @@ Private Sub AssignSketchIDIfNeeded()
     Exit Sub
 
 ErrorHandler:
-    Debug.Print "AssignSketchIDIfNeeded Error: " & Err.Description
-    Debug.Print "AssignSketchIDIfNeeded: SessionID=" & m_SessionID & ", attempted SketchID=" & nextSketchID
+'    Debug.Print "AssignSketchIDIfNeeded Error: " & Err.Description
+'    Debug.Print "AssignSketchIDIfNeeded: SessionID=" & m_SessionID & ", attempted SketchID=" & nextSketchID
 End Sub
 
 Private Function GetNextSketchIDForSession(SessionID As Long) As Long
@@ -172,7 +173,7 @@ Private Function GetNextSketchIDForSession(SessionID As Long) As Long
                              "ORDER BY SketchID")
     
     Do While Not rs.EOF
-        Debug.Print "  - SketchID: " & rs!SketchID
+'        Debug.Print "  - SketchID: " & rs!SketchID
         rs.MoveNext
     Loop
     rs.Close
@@ -350,4 +351,131 @@ ErrorHandler:
     On Error GoTo 0
 End Sub
 
+' Add these functions to your existing frmImpressions code
 
+' Calculate and display average success for current session
+Private Sub CalculateAndDisplayAverageSuccess()
+    On Error GoTo Err_CalcAvg
+    
+    Dim db As DAO.Database
+    Dim rst As DAO.Recordset
+    Dim sql As String
+    
+    Set db = CurrentDb()
+    
+    sql = "SELECT AVG(Success) AS SuccessAverage FROM tblImpressions " & _
+          "WHERE SessionID = " & m_SessionID & " " & _
+          "AND (DateDeleted IS NULL OR DateDeleted = #1/1/1900#)"
+    
+    Set rst = db.OpenRecordset(sql, dbOpenSnapshot)
+    
+    If Not rst.EOF Then
+        ' Check if we got a result (could be Null if no impressions exist)
+        If IsNull(rst!SuccessAverage) Then
+            Me.txtAvgSuccess.value = Null
+            Me.txtAvgSuccess.backColor = RGB(255, 255, 255) ' White background
+        Else
+            ' Format to 2 decimal places
+            Me.txtAvgSuccess.value = Format(rst!SuccessAverage, "0.00")
+            ' Apply color coding
+'            ApplySuccessColorCoding
+        End If
+    Else
+        Me.txtAvgSuccess.value = Null
+        Me.txtAvgSuccess.backColor = RGB(255, 255, 255) ' White background
+    End If
+    
+    rst.Close
+    Set rst = Nothing
+    Set db = Nothing
+    
+    Exit Sub
+    
+Err_CalcAvg:
+    ' Set to null on error and clean up
+    Me.txtAvgSuccess.value = Null
+    Me.txtAvgSuccess.backColor = RGB(255, 255, 255) ' White background
+    
+    If Not rst Is Nothing Then
+        On Error Resume Next
+        rst.Close
+        Set rst = Nothing
+        On Error GoTo 0
+    End If
+    Set db = Nothing
+    
+    Debug.Print "Error calculating average success: " & Err.Description
+End Sub
+
+
+' Event handler for when Success value changes
+Private Sub txtSuccess_AfterUpdate()
+    ' Recalculate average after Success value changes
+    CalculateAndDisplayAverageSuccess
+End Sub
+
+
+' Event handler for after a record is updated/saved
+Private Sub Form_AfterUpdate()
+    ' Recalculate average after any record is saved
+    CalculateAndDisplayAverageSuccess
+End Sub
+
+' Update Form_Load to include tolerance loading
+Private Sub Form_Load()
+    On Error GoTo ErrorHandler
+    
+    Dim sql As String
+    Dim sAccurate As Double
+    Dim sAlmostAccurate As Double
+    Dim sNotAccurate As Double
+    Dim sAlmostOpposite As Double
+    Dim sOpposite As Double
+
+    ' Grab current scores from tblTolerances
+    sAccurate = DLookup("ToleranceScore", "tblTolerances", "ToleranceColor = 'Green'")
+    sAlmostAccurate = DLookup("ToleranceScore", "tblTolerances", "ToleranceColor = 'ltGreen'")
+    sNotAccurate = DLookup("ToleranceScore", "tblTolerances", "ToleranceColor = 'White'")
+    sAlmostOpposite = DLookup("ToleranceScore", "tblTolerances", "ToleranceColor = 'ltRed'")
+    sOpposite = DLookup("ToleranceScore", "tblTolerances", "ToleranceColor = 'Red'")
+
+    ' Simple direct binding to main table with filter
+    sql = "SELECT i.*, " & _
+          Format(sAccurate, "'0.00'") & " AS Score_Accurate, " & _
+          Format(sAlmostAccurate, "'0.00'") & " AS Score_AlmostAccurate, " & _
+          Format(sNotAccurate, "'0.00'") & " AS Score_NotAccurate, " & _
+          Format(sAlmostOpposite, "'0.00'") & " AS Score_AlmostOpposite, " & _
+          Format(sOpposite, "'0.00'") & " AS Score_Opposite " & _
+          "FROM tblImpressions AS i " & _
+            "WHERE SessionID = " & m_SessionID & _
+            " AND (DateDeleted IS NULL OR DateDeleted = #1/1/1900#) " & _
+            "ORDER BY SketchID"
+    
+            
+
+    ' Apply query to form
+    Me.RecordSource = sql
+    
+    ' Force a requery to ensure data loads
+    Me.Requery
+    
+    ' Minimal control setup
+    SetupControls
+    LoadSessionInfo
+    
+    ' NEW: Load tolerance rules and calculate initial average
+'    LoadToleranceRules
+    CalculateAndDisplayAverageSuccess
+    
+    ' Debug: Check if records were loaded
+    If Me.RecordsetClone.recordCount > 0 Then
+        DoCmd.GoToRecord , , acFirst
+    Else
+        DoCmd.GoToRecord , , acNewRec
+    End If
+    
+    Exit Sub
+
+ErrorHandler:
+    MsgBox "Error loading impressions form: " & Err.Description, vbCritical, "Form Load Error"
+End Sub

@@ -7,7 +7,6 @@ Attribute VB_GlobalNameSpace = False
 Attribute VB_Creatable = True
 Attribute VB_PredeclaredId = True
 Attribute VB_Exposed = False
-' Solar Flare Form Module — Fixed Form_Load binding and LoadAPISettings procedure
 Option Compare Database
 Option Explicit
 
@@ -94,8 +93,3 @@ Private Sub btnCancel_Click()
     DoCmd.Close acForm, Me.name
 End Sub
 
-' --- Instructions:
-' 1. In the form's Property Sheet ? Event ? On Load, choose [Event Procedure].
-' 2. Remove any stray text from the On Load property.
-' 3. Compile the VBA project (Debug ? Compile).
-' 4. Test the form; the settings fields should populate on load.

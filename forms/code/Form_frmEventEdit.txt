@@ -34,16 +34,16 @@ Private Sub btnViewChart_Click()
     End If
     
     ' Get the ChartID for this event's natal chart
-    Dim chartID As Long
-    chartID = GetEventChartID(mEventID)
+    Dim ChartID As Long
+    ChartID = GetEventChartID(mEventID)
     
-    If chartID = 0 Then
+    If ChartID = 0 Then
         MsgBox "Unable to find event chart in database. Please regenerate the chart.", vbExclamation, "Chart Not Found"
         Exit Sub
     End If
     
     ' Open the aspect grid with the natal chart
-    DoCmd.OpenForm "frmAspectHalfGrid", acNormal, , , , , CStr(chartID)
+    DoCmd.OpenForm "frmAspectHalfGrid", acNormal, , , , , CStr(ChartID)
     
     Exit Sub
     
@@ -64,7 +64,7 @@ Private Function GetEventChartID(eventID As Long) As Long
     Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
     
     If Not rs.EOF Then
-        GetEventChartID = rs!chartID
+        GetEventChartID = rs!ChartID
     Else
         GetEventChartID = 0
     End If
@@ -181,7 +181,7 @@ Private Sub LoadEventData(eventID As Long)
         Me.txtCity.value = Nz(rs!City, "")
         Me.txtStateProv.value = Nz(rs!StateProvince, "")
         Me.cboCountry.value = Nz(rs!Country, "")
-        Me.txtLatitude.value = Nz(rs!latitude, 0)
+        Me.txtLatitude.value = Nz(rs!Latitude, 0)
         Me.txtLongitude.value = Nz(rs!longitude, 0)
         
         ' Update event chart checkbox if it exists
@@ -206,39 +206,6 @@ LoadError:
     MsgBox "Error loading event data: " & Err.Description, vbCritical, "Load Error"
 End Sub
 
-
-'Private Sub btnViewers_Click()
-'    On Error GoTo ErrorHandler
-'
-'    ' Check if this is a saved event with a valid ID.
-'    ' The txtEventID control on your form holds the ID for the current event.
-'    If IsNull(Me.txtEventID) Or Me.txtEventID.value = 0 Then
-'        MsgBox "You must save the event before you can view assigned viewers.", vbInformation, "Save Required"
-'        Exit Sub
-'    End If
-'
-'    ' --- IMPORTANT ---
-'    ' Force the form to save any pending edits (like a changed Event Name)
-'    ' so the report opens with the most up-to-date information.
-'    If Me.Dirty Then
-'        Me.Dirty = False
-'    End If
-'
-'    ' Pass the EventID and EventName to the report form via OpenArgs.
-'    ' The format is "EventID|EventName".
-'    Dim openArgs As String
-'    openArgs = Me.txtEventID.value & "|" & Nz(Me.txtEventName.value, "")
-'
-'    ' Open the report form in Dialog mode.
-'    ' Dialog mode pauses code here until the report form is closed.
-'    DoCmd.OpenForm "frmAssignedViewerReport", acViewNormal, , , , acDialog, openArgs
-'
-'    Exit Sub
-'
-'ErrorHandler:
-'    MsgBox "An unexpected error occurred while trying to open the viewers report." & vbCrLf & _
-'           "Error: " & Err.Description, vbCritical, "Error"
-'End Sub
 
 Private Sub btnViewers_Click()
     On Error GoTo ErrorHandler
@@ -277,7 +244,7 @@ Private Sub btnViewers_Click()
     
     ' Open the viewer assignment form (frmViewerAssignList) in Dialog mode
     ' This form allows users to assign/unassign viewers and shows current assignments
-    DoCmd.OpenForm "frmViewerAssignList", acViewNormal, , , , acDialog, openArgs
+    DoCmd.OpenForm "frmViewerAssignList", acNormal, , , , acDialog, openArgs
         
     Exit Sub
 
@@ -293,9 +260,6 @@ ErrorHandler:
            "Error: " & Err.Description, vbCritical, "Error"
 End Sub
 
-
-
-' --- NEW SUBROUTINE ---
 Private Sub btnViewSessions_Click()
     On Error GoTo ErrorHandler
     
@@ -314,17 +278,16 @@ Private Sub btnViewSessions_Click()
     ' Pass the context to the Session Manager form.
     ' Format: "EventID=28"
     Dim openArgs As String
-    openArgs = "EventID=" & Me.txtEventID.value
+    openArgs = "PersonID|" & 0 & "|EventID|" & Me.txtEventID.value
     
     ' Open the Session Manager form in Dialog mode.
-    DoCmd.OpenForm "frmSessionManager", acViewNormal, , , , , openArgs
+    DoCmd.OpenForm "frmSessionManager", acNormal, , , , , openArgs
     
     Exit Sub
 
 ErrorHandler:
     MsgBox "An error occurred opening the Session Manager: " & Err.Description, vbCritical, "Error"
 End Sub
-' --- END NEW SUBROUTINE ---
 
 Private Sub Form_BeforeUpdate(Cancel As Integer)
     ' Only allow updates if explicitly triggered by Save button
@@ -472,7 +435,7 @@ Private Function GetOrCreateLocationID() As Long
         rs!City = ProperCase(Me.txtCity.value)
         rs![StateProvince] = UCase(Me.txtStateProv.value)
         rs!Country = Me.cboCountry.value
-        rs!latitude = Me.txtLatitude.value
+        rs!Latitude = Me.txtLatitude.value
         rs!longitude = Me.txtLongitude.value
         rs!DateCreated = Now()
         rs!DateUpdated = Now()
@@ -844,7 +807,7 @@ Private Sub UpdateLocationInfo()
         rs!City = ProperCase(Me.txtCity.value)
         rs![StateProvince] = UCase(Me.txtStateProv.value)
         rs!Country = Me.cboCountry.value
-        rs!latitude = Me.txtLatitude.value
+        rs!Latitude = Me.txtLatitude.value
         rs!longitude = Me.txtLongitude.value
         rs!DateCreated = Now()
         rs.Update
@@ -870,58 +833,6 @@ LocationError:
     Set db = Nothing
     MsgBox "Error updating location information: " & Err.Description, vbCritical, "Location Error"
 End Sub
-
-'Private Sub btnGenerateEventChart_Click()
-'    ' Generate natal chart for this event
-'    On Error GoTo ChartError
-'
-'    ' First ensure all data is saved
-'    If Me.Dirty Then
-'        Call btnSave_Click
-'        If Me.Dirty Then  ' If save failed, don't proceed
-'            Exit Sub
-'        End If
-'    End If
-'
-'    ' Validate required data for chart generation
-'    If IsNull(Me.dtEventDate.value) Or IsNull(Me.dtEventTime.value) Then
-'        MsgBox "Event Date and Event Time are required for event chart generation.", vbExclamation, "Missing Data"
-'        Exit Sub
-'    End If
-'
-'    If IsNull(Me.txtLatitude.value) Or IsNull(Me.txtLongitude.value) Then
-'        MsgBox "Location coordinates are required for event chart generation." & vbCrLf & _
-'               "Please use the 'Get Coordinates' button first.", vbExclamation, "Missing Coordinates"
-'        Exit Sub
-'    End If
-'
-'    ' Update location information
-'    UpdateLocationInfo
-'
-'    ' Here you would call your natal chart generation function
-'    ' This should integrate with your Swiss Ephemeris code
-'
-'    ' For now, just show a placeholder message
-'    MsgBox "Event chart generation would be triggered here." & vbCrLf & _
-'           "This will integrate with your Swiss Ephemeris calculations.", vbInformation, "Chart Generation"
-'
-'    ' Mark Event chart as generated
-'    Dim db As DAO.Database
-'    Dim sql As String
-'
-'    Set db = CurrentDb()
-'    sql = "UPDATE tblEvents SET EventChartGenerated = True WHERE EventID = " & Me.txtEventID.value
-'    db.Execute sql
-'    Set db = Nothing
-'
-'    ' Refresh the form to show the updated status
-'    Me.Requery
-'
-'    Exit Sub
-'
-'ChartError:
-'    MsgBox "Error generating event chart: " & Err.Description, vbCritical, "Chart Generation Error"
-'End Sub
 
 Private Sub btnGenerateEventChart_Click()
     On Error GoTo ErrorHandler
@@ -989,30 +900,6 @@ ErrorHandler:
     DoCmd.Hourglass False
     MsgBox "Error generating event chart: " & Err.Description, vbCritical, "Chart Generation Error"
 End Sub
-'    ' Mark Event chart as generated
-'    Dim db As DAO.Database
-'    Dim sql As String
-'
-'    Set db = CurrentDb()
-'    sql = "UPDATE tblEvents SET EventChartGenerated = True WHERE EventID = " & Me.txtEventID.value
-'    db.Execute sql
-'    Set db = Nothing
-'
-'    ' Refresh the form to show the updated status
-'    Me.Requery
-'
-'    Exit Sub
-'
-'ChartError:
-'    MsgBox "Error generating event chart: " & Err.Description, vbCritical, "Chart Generation Error"
-'End Sub
-
-
-
-
-
-
-
 
 Private Sub btnGetCoordinates_Click()
     Dim strCity As String

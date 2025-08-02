@@ -1,0 +1,12 @@
+Attribute VB_Name = "modGlobalTransitContext"
+Option Compare Database
+
+' In modGlobalTransitContext
+Public gPersonID As Long
+Public gEventID As Long
+Public gSessionID As Long
+Public gTransitType As String
+
+Public gViewerPersonID As Long  ' Set to the PersonID of the Viewer (in SessionManager)
+Public Const REFERENCE_PERSON_ID As Long = 191  ' Set to John’s actual PersonID in tblPeople
+

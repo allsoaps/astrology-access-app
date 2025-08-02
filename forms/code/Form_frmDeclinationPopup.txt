@@ -1,0 +1,49 @@
+VERSION 1.0 CLASS
+BEGIN
+  MultiUse = -1  'True
+END
+Attribute VB_Name = "Form_frmDeclinationPopup"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = True
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Option Compare Database
+Option Explicit
+
+Private Sub Form_Load()
+    Dim db As DAO.Database
+    Dim strMoon As String
+    Dim strPlanet As String
+    Dim rs As DAO.Recordset
+
+    Me.txtChartID = openArgs
+
+    Set db = CurrentDb
+    
+    
+    strMoon = "SELECT cp.BodyID, cb.BodyName & "" "" & cb.Symbol AS cbName, " & _
+             "cp.Declination, cp.Latitude, cp.LatitudeSpeed, cp.LongitudeSpeed, cp.IsRetrograde " & _
+             "FROM tblChartPositions As cp INNER Join tblCelestialBodies AS cb ON cp.BodyID = cb.BodyID " & _
+             "WHERE cp.ChartID = " & Me.txtChartID & " AND cp.BodyID = 2;"
+    
+    strPlanet = "SELECT cp.BodyID, cb.BodyName & "" "" & cb.Symbol AS cbName, " & _
+             "cp.Declination, cp.Latitude, cp.LatitudeSpeed, cp.LongitudeSpeed, cp.IsRetrograde " & _
+             "FROM tblChartPositions As cp INNER Join tblCelestialBodies AS cb ON cp.BodyID = cb.BodyID " & _
+             "WHERE cp.ChartID = " & Me.txtChartID & " AND cp.BodyID <> 2 AND cb.BodyType IN ('Planet','Asteroid');"
+    
+    Set rs = db.OpenRecordset(strMoon, dbOpenSnapshot)
+    
+    If Not rs.EOF Then
+            Me.txtMoonDecl = rs!Declination
+            Me.txtMoonLat = rs!Latitude
+            Me.txtMoonSpeed = rs!LatitudeSpeed
+            
+            Me.lstPlanets.RowSource = strPlanet
+    End If
+    
+    rs.Close
+    Set rs = Nothing
+    Set db = Nothing
+    Exit Sub
+    
+End Sub

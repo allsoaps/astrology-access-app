@@ -77,7 +77,6 @@ Private Sub btnSaveOrbConfig_Click()
         MsgBox "An error occurred while trying to save Orbs. Enter a value: " & Err.Description, vbExclamation, "Save Error"
     End If
     
-    
     Exit Sub
     
 Err_Save:

@@ -76,7 +76,7 @@ Private Sub btnEvents_Click()
     
     ' Open the event assignment form (frmEventAssignList) in Dialog mode
     ' This form allows users to assign/unassign events and shows current assignments
-    DoCmd.OpenForm "frmEventAssignList", acViewNormal, , , , acDialog, openArgs
+    DoCmd.OpenForm "frmEventAssignList", acNormal, , , , acDialog, openArgs
     
     ' Optionally refresh the list after viewer assignment changes
     ' (in case any event data was updated)
@@ -114,9 +114,9 @@ Private Sub btnViewSessions_Click()
     End If
     
     ' Pass the context to the Session Manager form.
-    ' Format: "PersonID=123"
+    ' Format: "PersonID|123"
     Dim openArgs As String
-    openArgs = "PersonID=" & Me.txtPersonID.value
+    openArgs = "PersonID|" & m_PersonID & "|EventID|" & 0
     
     ' Open the Session Manager form
     DoCmd.OpenForm "frmSessionManager", acNormal, , , , , openArgs
@@ -251,7 +251,7 @@ Private Function GetOrCreateLocationID() As Long
         rs!City = ProperCase(Me.txtCity.value)
         rs![StateProvince] = UCase(Me.txtStateProv.value)
         rs!Country = Me.cboCountry.value
-        rs!latitude = Me.txtLatitude.value
+        rs!Latitude = Me.txtLatitude.value
         rs!longitude = Me.txtLongitude.value
         rs!DateCreated = Now()
         rs!DateUpdated = Now()
@@ -519,7 +519,7 @@ Private Sub UpdateLocationInfo()
         rs!City = ProperCase(Me.txtCity.value)
         rs![StateProvince] = UCase(Me.txtStateProv.value)
         rs!Country = Me.cboCountry.value
-        rs!latitude = Me.txtLatitude.value
+        rs!Latitude = Me.txtLatitude.value
         rs!longitude = Me.txtLongitude.value
         rs!DateCreated = Now()
         rs.Update
@@ -666,7 +666,7 @@ Private Sub LoadStudentData(PersonID As Long)
         Me.txtCity.value = Nz(rs!City, "")
         Me.txtStateProv.value = Nz(rs!StateProvince, "")
         Me.cboCountry.value = Nz(rs!Country, "")
-        Me.txtLatitude.value = Nz(rs!latitude, 0)
+        Me.txtLatitude.value = Nz(rs!Latitude, 0)
         Me.txtLongitude.value = Nz(rs!longitude, 0)
         
         ' Update natal chart checkbox if it exists
@@ -830,16 +830,16 @@ Private Sub btnViewNatalChart_Click()
     End If
     
     ' Get the ChartID for this person's natal chart
-    Dim chartID As Long
-    chartID = GetNatalChartID(m_PersonID)
+    Dim ChartID As Long
+    ChartID = GetNatalChartID(m_PersonID)
     
-    If chartID = 0 Then
+    If ChartID = 0 Then
         MsgBox "Unable to find natal chart in database. Please regenerate the chart.", vbExclamation, "Chart Not Found"
         Exit Sub
     End If
     
     ' Open the aspect grid with the natal chart
-    DoCmd.OpenForm "frmAspectHalfGrid", acNormal, , , , , CStr(chartID)
+    DoCmd.OpenForm "frmAspectHalfGrid", acNormal, , , , , CStr(ChartID)
     
     Exit Sub
     
@@ -860,7 +860,7 @@ Private Function GetNatalChartID(PersonID As Long) As Long
     Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
     
     If Not rs.EOF Then
-        GetNatalChartID = rs!chartID
+        GetNatalChartID = rs!ChartID
     Else
         GetNatalChartID = 0
     End If

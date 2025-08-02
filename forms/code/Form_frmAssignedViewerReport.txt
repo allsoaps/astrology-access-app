@@ -179,7 +179,7 @@ Private Sub HandleNoViewers()
     If response = vbYes Then
         Dim openArgs As String
         openArgs = m_EventID & "|" & m_EventName
-        DoCmd.OpenForm "frmViewerAssignList", acViewNormal, , , , acDialog, openArgs
+        DoCmd.OpenForm "frmViewerAssignList", acNormal, , , , acDialog, openArgs
     End If
     
     ' Close this form

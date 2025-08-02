@@ -55,7 +55,7 @@ Public Function AddNewLocation(City As String, StateProv As String, Country As S
     rs!City = City
     rs!StateProvince = StateProv
     rs!Country = Country
-    rs!latitude = lat
+    rs!Latitude = lat
     rs!longitude = lng
     rs!DateCreated = Now()
     rs.Update

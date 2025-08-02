@@ -29,7 +29,7 @@ Private Sub btnGenerateEventChart_Click()
         Exit Sub
     End If
 
-    If IsNull(rs!latitude.value) Or IsNull(rs!longitude.value) Then
+    If IsNull(rs!Latitude.value) Or IsNull(rs!longitude.value) Then
         MsgBox "Location coordinates are required for event chart generation." & vbCrLf & _
                "Please use the 'Get Coordinates' button first.", vbExclamation, "Missing Coordinates"
         Exit Sub
@@ -99,16 +99,16 @@ Private Sub btnViewChart_Click()
     End If
     
     ' Get the ChartID for this event's natal chart
-    Dim chartID As Long
-    chartID = GetEventChartID(selectedEventID)
+    Dim ChartID As Long
+    ChartID = GetEventChartID(selectedEventID)
     
-    If chartID = 0 Then
+    If ChartID = 0 Then
         MsgBox "Unable to find event chart in database. Please regenerate the chart.", vbExclamation, "Chart Not Found"
         Exit Sub
     End If
     
     ' Open the aspect grid with the natal chart
-    DoCmd.OpenForm "frmAspectHalfGrid", acNormal, , , , , CStr(chartID)
+    DoCmd.OpenForm "frmAspectHalfGrid", acNormal, , , , , CStr(ChartID)
     
     Exit Sub
     
@@ -132,17 +132,19 @@ Private Sub btnViewSessions_Click()
     ' Pass the context to the Session Manager form.
     ' Format: "EventID=28"
     Dim openArgs As String
-    openArgs = "EventID=" & pid
+    openArgs = "PersonID|" & 0 & "|EventID|" & pid
     
     ' Open the Session Manager form in Dialog mode.
-    DoCmd.OpenForm "frmSessionManager", acViewNormal, , , , , openArgs
+    DoCmd.OpenForm "frmSessionManager", acNormal, , , , , openArgs
     
     Exit Sub
 
 ErrorHandler:
     MsgBox "An error occurred opening the Session Manager: " & Err.Description, vbCritical, "Error"
 End Sub
-' --- END NEW SUBROUTINE ---
+
+
+
 '=== Initialize form ===
 Private Sub Form_Load()
     Me.cboSearchField = ""
@@ -181,18 +183,11 @@ Private Sub btnSearch_Click()
         Exit Sub
     End If
     
-    
-    
-    ' Base SELECT
-'    strSQL = _
-'        "Select e.EventID AS [Event ID], e.EventName AS [Event Name], et.Event_Desc AS [EventType], " & _
-'        "e.EventChartGenerated AS [Chart Ready?], e.EventDate AS [EventDate] " & _
-'        "FROM tblEvents as e LEFT JOIN lu_EventType as et on e.EventType = et.ID "
-    
-strSQL = _
-    "Select e.EventID AS [Event ID], e.EventName AS [Event Name], et.Event_Desc AS [EventType], " & _
-    "IIf(e.EventChartGenerated, '?', '?') AS [Chart Ready?], e.EventDate AS [EventDate] " & _
-    "FROM tblEvents as e LEFT JOIN lu_EventType as et on e.EventType = et.ID "
+   
+    strSQL = _
+        "Select e.EventID AS [Event ID], e.EventName AS [Event Name], et.Event_Desc AS [EventType], " & _
+        "IIf(e.EventChartGenerated, '?', '?') AS [Chart Ready?], e.EventDate AS [EventDate] " & _
+        "FROM tblEvents as e LEFT JOIN lu_EventType as et on e.EventType = et.ID "
     
     ' Build WHERE clause
     Select Case Me.cboSearchField
@@ -272,12 +267,12 @@ End Sub
 
 
 '=== Helper to check chart status ===
-Private Function ChartGenerated(PersonID As Long) As Boolean
+Private Function chartGenerated(PersonID As Long) As Boolean
     Dim rs As DAO.Recordset
     Set rs = CurrentDb.OpenRecordset( _
         "SELECT NatalChartGenerated FROM tblPeople WHERE PersonID=" & PersonID, _
         dbOpenSnapshot)
-    ChartGenerated = (Not rs.EOF And rs!NatalChartGenerated)
+    chartGenerated = (Not rs.EOF And rs!NatalChartGenerated)
     rs.Close: Set rs = Nothing
 End Function
 
@@ -334,7 +329,7 @@ Private Sub btnViewers_Click()
     
     ' Open the viewer assignment form (frmViewerAssignList) in Dialog mode
     ' This form allows users to assign/unassign viewers and shows current assignments
-    DoCmd.OpenForm "frmViewerAssignList", acViewNormal, , , , acDialog, openArgs
+    DoCmd.OpenForm "frmViewerAssignList", acNormal, , , , acDialog, openArgs
     
     ' Optionally refresh the list after viewer assignment changes
     ' (in case any event data was updated)
@@ -398,7 +393,7 @@ Private Function GetEventChartID(eventID As Long) As Long
     Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
     
     If Not rs.EOF Then
-        GetEventChartID = rs!chartID
+        GetEventChartID = rs!ChartID
     Else
         GetEventChartID = 0
     End If

@@ -23,7 +23,7 @@ Public Function GenerateTransitChart(PersonID As Long, SessionID As Long) As Boo
     Dim sessionDate As Date
     Dim sessionTime As Date
     Dim sessionDateTime As Date
-    Dim latitude As Double
+    Dim Latitude As Double
     Dim longitude As Double
     Dim julianDay As Double
     
@@ -54,10 +54,10 @@ Public Function GenerateTransitChart(PersonID As Long, SessionID As Long) As Boo
         Exit Function
     End If
     
-    latitude = rsLocation!latitude
+    Latitude = rsLocation!Latitude
     longitude = rsLocation!longitude
     
-    Debug.Print "Location: " & rsLocation!City & " (" & latitude & ", " & longitude & ")"
+    Debug.Print "Location: " & rsLocation!City & " (" & Latitude & ", " & longitude & ")"
     
     ' 3. Get Natal Chart Positions
     Set rsNatal = db.OpenRecordset( _
@@ -304,43 +304,6 @@ Private Function GetAspectName(aspectID As Integer) As String
     Set db = Nothing
 End Function
 
-' Test function to run the transit calculation
-Public Sub TestTransitChart()
-    Debug.Print "=== TESTING TRANSIT CHART ==="
-    
-    Dim Success As Boolean
-    Success = GenerateTransitChart(15, 19)
-    
-    If Success Then
-        Debug.Print "Transit chart generated successfully!"
-        
-        ' Show results
-        Dim db As DAO.Database
-        Dim rs As DAO.Recordset
-        
-        Set db = CurrentDb()
-        Set rs = db.OpenRecordset( _
-            "SELECT ta.*, cb1.BodyName AS TransitPlanet, cb2.BodyName AS NatalPlanet, asp.AspectName " & _
-            "FROM ((tblTransitAspects ta " & _
-            "INNER JOIN tblCelestialBodies cb1 ON ta.TransitBodyID = cb1.BodyID) " & _
-            "INNER JOIN tblCelestialBodies cb2 ON ta.NatalBodyID = cb2.BodyID) " & _
-            "INNER JOIN tblAspects asp ON ta.AspectID = asp.AspectID " & _
-            "WHERE ta.PersonID = 15 AND ta.SessionID = 19 " & _
-            "ORDER BY ta.ExactDegree")
-        
-        Debug.Print "TRANSIT ASPECTS FOUND:"
-        Do While Not rs.EOF
-            Debug.Print "Transit " & rs!TransitPlanet & " " & rs!AspectName & _
-                       " Natal " & rs!NatalPlanet & " (Orb: " & Format(rs!ExactDegree, "0.00") & "°)"
-            rs.MoveNext
-        Loop
-        
-        rs.Close
-        Set db = Nothing
-    Else
-        Debug.Print "Transit chart generation failed!"
-    End If
-End Sub
 
 ' Enhanced main function - handles all 6 transit variations
 Public Function GenerateTransitChartEx(transitType As String, PersonID As Long, eventID As Long, SessionID As Long, Optional ReferencePersonID As Long = 0) As Boolean
@@ -466,6 +429,7 @@ ErrorHandler:
     Resume Cleanup
 End Function
 
+'check each case for proper chart id retrievals - 7/28/25
 
 ' Update the GetTransitChartIDs function with corrected debug messages:
 Private Function GetTransitChartIDs(transitType As String, PersonID As Long, eventID As Long, SessionID As Long, ReferencePersonID As Long, _
@@ -484,28 +448,6 @@ Private Function GetTransitChartIDs(transitType As String, PersonID As Long, eve
     Debug.Print "Resolving chart IDs for transit type: " & transitType
     
     Select Case transitType
-        Case TRANSIT_EVENT_SESSION
-            ' Base: Event Chart, Transit: Session Chart
-            Debug.Print "Event to Session Transit"
-            
-            sql = "SELECT ChartID FROM tblCharts WHERE EventID = " & eventID & " AND ChartType = 'Event'"
-            Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
-            If Not rs.EOF Then
-                baseChartID = rs!chartID
-                baseChartType = "Event"
-                Debug.Print "Found Event chart: " & baseChartID
-            End If
-            rs.Close
-            
-            sql = "SELECT ChartID FROM tblCharts WHERE SessionID = " & SessionID & " AND ChartType = 'Session'"
-            Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
-            If Not rs.EOF Then
-                transitChartID = rs!chartID
-                transitChartType = "Session"
-                Debug.Print "Found Session chart: " & transitChartID
-            End If
-            rs.Close
-            
         Case TRANSIT_VIEWER_EVENT
             ' Base: Viewer Natal, Transit: Event Chart
             Debug.Print "Viewer Natal to Event Transit"
@@ -513,18 +455,24 @@ Private Function GetTransitChartIDs(transitType As String, PersonID As Long, eve
             sql = "SELECT ChartID FROM tblCharts WHERE PersonID = " & PersonID & " AND ChartType = 'Natal'"
             Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
             If Not rs.EOF Then
-                baseChartID = rs!chartID
+                baseChartID = rs!ChartID
                 baseChartType = "Natal"
-                Debug.Print "Found Viewer Natal chart: " & baseChartID
+                Debug.Print "Found Viewer Natal chart (Viewer-Session): " & baseChartID
+            Else
+                MsgBox "Viewer Natal Chart Missing", vbExclamation
+                Exit Function
             End If
             rs.Close
             
             sql = "SELECT ChartID FROM tblCharts WHERE EventID = " & eventID & " AND ChartType = 'Event'"
             Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
             If Not rs.EOF Then
-                transitChartID = rs!chartID
+                transitChartID = rs!ChartID
                 transitChartType = "Event"
-                Debug.Print "Found Event chart: " & transitChartID
+                Debug.Print "Found Event chart(Viewer-Session): " & transitChartID
+            Else
+                MsgBox "Event Chart Missing", vbExclamation
+                Exit Function
             End If
             rs.Close
             
@@ -535,18 +483,24 @@ Private Function GetTransitChartIDs(transitType As String, PersonID As Long, eve
             sql = "SELECT ChartID FROM tblCharts WHERE PersonID = " & PersonID & " AND ChartType = 'Natal'"
             Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
             If Not rs.EOF Then
-                baseChartID = rs!chartID
+                baseChartID = rs!ChartID
                 baseChartType = "Natal"
-                Debug.Print "Found Viewer Natal chart: " & baseChartID
+                Debug.Print "Found Viewer Natal chart (Viewer-Session): " & baseChartID
+            Else
+                MsgBox "Viewer Natal Chart Missing", vbExclamation
+                Exit Function
             End If
             rs.Close
             
             sql = "SELECT ChartID FROM tblCharts WHERE SessionID = " & SessionID & " AND ChartType = 'Session'"
             Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
             If Not rs.EOF Then
-                transitChartID = rs!chartID
+                transitChartID = rs!ChartID
                 transitChartType = "Session"
-                Debug.Print "Found Session chart: " & transitChartID
+                Debug.Print "Found Session chart (Viewer-Session): " & transitChartID
+            Else
+                MsgBox "Session Chart Missing", vbExclamation
+                Exit Function
             End If
             rs.Close
             
@@ -559,18 +513,24 @@ Private Function GetTransitChartIDs(transitType As String, PersonID As Long, eve
             sql = "SELECT ChartID FROM tblCharts WHERE PersonID = " & ReferencePersonID & " AND ChartType = 'Natal'"
             Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
             If Not rs.EOF Then
-                baseChartID = rs!chartID
+                baseChartID = rs!ChartID
                 baseChartType = "Natal"
-                Debug.Print "Found Reference Natal chart: " & baseChartID
+                Debug.Print "Found Reference Natal chart (John-Viewer): " & baseChartID
+            Else
+                MsgBox "Reference Natal Chart Missing", vbExclamation
+                Exit Function
             End If
             rs.Close
             
             sql = "SELECT ChartID FROM tblCharts WHERE PersonID = " & PersonID & " AND ChartType = 'Natal'"
             Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
             If Not rs.EOF Then
-                transitChartID = rs!chartID
+                transitChartID = rs!ChartID
                 transitChartType = "Natal"
-                Debug.Print "Found Viewer Natal chart: " & transitChartID
+                Debug.Print "Found Viewer Natal chart (John-Viewer): " & transitChartID
+            Else
+                MsgBox "Viewer Natal Chart Missing", vbExclamation
+                Exit Function
             End If
             rs.Close
             
@@ -583,18 +543,21 @@ Private Function GetTransitChartIDs(transitType As String, PersonID As Long, eve
             sql = "SELECT ChartID FROM tblCharts WHERE PersonID = " & ReferencePersonID & " AND ChartType = 'Natal'"
             Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
             If Not rs.EOF Then
-                baseChartID = rs!chartID
+                baseChartID = rs!ChartID
                 baseChartType = "Natal"
-                Debug.Print "Found Reference Natal chart: " & baseChartID
+                Debug.Print "Found Reference Natal chart (John-Event): " & baseChartID
             End If
             rs.Close
             
             sql = "SELECT ChartID FROM tblCharts WHERE EventID = " & eventID & " AND ChartType = 'Event'"
             Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
             If Not rs.EOF Then
-                transitChartID = rs!chartID
+                transitChartID = rs!ChartID
                 transitChartType = "Event"
-                Debug.Print "Found Event chart: " & transitChartID
+                Debug.Print "Found Event chart (John-Event): " & transitChartID
+            Else
+                MsgBox "Event Chart Missing", vbExclamation
+                Exit Function
             End If
             rs.Close
             
@@ -607,18 +570,52 @@ Private Function GetTransitChartIDs(transitType As String, PersonID As Long, eve
             sql = "SELECT ChartID FROM tblCharts WHERE PersonID = " & ReferencePersonID & " AND ChartType = 'Natal'"
             Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
             If Not rs.EOF Then
-                baseChartID = rs!chartID
+                baseChartID = rs!ChartID
                 baseChartType = "Natal"
-                Debug.Print "Found Reference Natal chart: " & baseChartID
+                Debug.Print "Found Reference (John) Natal chart (John-Session): " & baseChartID
+            Else
+                MsgBox "Reference Natal Chart Missing", vbExclamation
+                Exit Function
             End If
             rs.Close
             
             sql = "SELECT ChartID FROM tblCharts WHERE SessionID = " & SessionID & " AND ChartType = 'Session'"
             Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
             If Not rs.EOF Then
-                transitChartID = rs!chartID
+                transitChartID = rs!ChartID
                 transitChartType = "Session"
-                Debug.Print "Found Session chart: " & transitChartID
+                Debug.Print "Found Session chart (John-Session): " & transitChartID
+            Else
+                MsgBox "Session Chart Missing", vbExclamation
+                Exit Function
+            End If
+            rs.Close
+            
+        Case TRANSIT_EVENT_SESSION
+            ' Base: Event Chart, Transit: Session Chart
+            Debug.Print "Event to Session Transit"
+            
+            sql = "SELECT ChartID FROM tblCharts WHERE EventID = " & eventID & " AND ChartType = 'Event'"
+            Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
+            If Not rs.EOF Then
+                baseChartID = rs!ChartID
+                baseChartType = "Event"
+                Debug.Print "Found Event chart (Event-Session): " & baseChartID
+            Else
+                MsgBox "Event Chart Missing", vbExclamation
+                Exit Function
+            End If
+            rs.Close
+            
+            sql = "SELECT ChartID FROM tblCharts WHERE SessionID = " & SessionID & " AND ChartType = 'Session'"
+            Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
+            If Not rs.EOF Then
+                transitChartID = rs!ChartID
+                transitChartType = "Session"
+                Debug.Print "Found Session chart (Event-Session): " & transitChartID
+            Else
+                MsgBox "Session Chart Missing", vbExclamation
+                Exit Function
             End If
             rs.Close
             
@@ -658,7 +655,8 @@ Private Function GetDefaultReferencePersonID() As Long
     Set rs = db.OpenRecordset("SELECT TOP 1 PersonID FROM tblPeople ORDER BY PersonID", dbOpenSnapshot)
     
     If Not rs.EOF Then
-        GetDefaultReferencePersonID = rs!PersonID
+'        GetDefaultReferencePersonID = rs!PersonID
+        GetDefaultReferencePersonID = 191           ' hard-coded to John's PersonID
         Debug.Print "Using default reference PersonID: " & GetDefaultReferencePersonID
     Else
         GetDefaultReferencePersonID = 0
@@ -683,120 +681,120 @@ End Function
 ' Purpose: Compare Viewer Natal vs Session Natal and save transit aspects
 
 ' Entry point
-Public Function GenerateTransitChart_ViewerToSession(PersonID As Long, SessionID As Long) As Boolean
-    Dim db As DAO.Database
-    Dim rs As DAO.Recordset
-    Dim baseChartID As Long, transitChartID As Long, eventID As Long
-    Dim basePlanets As Collection, transitPlanets As Collection
-    Dim transitType As String: transitType = "Viewer?Session"
-    Dim aspectCount As Long: aspectCount = 0
-    Dim aspectList As DAO.Recordset
-    Dim k As Variant, j As Variant
-    Dim kArr() As Variant, jArr() As Variant
-    Dim transSpeed As Double, natalSpeed As Double
-
-    On Error GoTo ErrorHandler
-
-    Set db = CurrentDb()
-
-    ' 1. Lookup the base natal chart (Viewer)
-    baseChartID = chartExists("Natal", PersonID)
-    If baseChartID = 0 Then
-        MsgBox "No Natal chart found for PersonID=" & PersonID, vbExclamation
-        Exit Function
-    End If
-
-    ' 2. Lookup the session chart (Session)
-    transitChartID = chartExists("Session", , , SessionID)
-    If transitChartID = 0 Then
-        MsgBox "No Session chart found for SessionID=" & SessionID, vbExclamation
-        Exit Function
-    End If
-
-    ' 3. Lookup EventID from tblSessions
-    Set rs = db.OpenRecordset("SELECT EventID FROM tblSessions WHERE SessionID=" & SessionID)
-    If Not rs.EOF Then eventID = rs!eventID Else eventID = 0
-    rs.Close
-
-    ' 4. Delete any existing transit chart for this Viewer-Session combo
-    db.Execute "DELETE FROM tblTransitAspects WHERE PersonID=" & PersonID & _
-               " AND SessionID=" & SessionID & " AND TransitType='" & transitType & "'"
-
-    ' 5. Load planetary positions for each chart
-    Set basePlanets = LoadPlanetaryPositions(baseChartID)
-    Set transitPlanets = LoadPlanetaryPositions(transitChartID)
-
-    ' 6. Load aspects
-    Set aspectList = db.OpenRecordset("SELECT * FROM tblAspects")
-
-    ' 7. Loop through body pairs
-    Dim natalBodyID As Long, transitBodyID As Long
-    Dim natalLon As Double, transitLon As Double, diff As Double
-    Dim orb As Double, exact As Double, applying As Boolean, retro As Boolean
-    Dim aspectID As Long, aspectAngle As Double, aspectType As String
-
-    For Each k In transitPlanets
-        kArr = k
-        transitBodyID = kArr(0)
-        transitLon = kArr(1)
-        transSpeed = CDbl(kArr(2))
-        retro = kArr(3)
-
-        For Each j In basePlanets
-            jArr = j
-            natalBodyID = jArr(0)
-            natalLon = jArr(1)
-            natalSpeed = CDbl(jArr(2))
-            diff = Abs(transitLon - natalLon)
-            If diff > 180 Then diff = 360 - diff
-
-            aspectList.MoveFirst
-            Do While Not aspectList.EOF
-                aspectAngle = aspectList!angle
-                aspectID = aspectList!aspectID
-                aspectType = aspectList!aspectType
-
-                If aspectType = "Major" Then
-                    orb = aspectList!OrbitMajor + GetOrbAdjustment("Major")
-                Else
-                    orb = aspectList!OrbitMinor + GetOrbAdjustment("Minor")
-                End If
-
-                If Abs(diff - aspectAngle) <= orb Then
-                    exact = Abs(diff - aspectAngle)
-                    applying = IsAspectApplying(transitLon, natalLon, transSpeed, natalSpeed, aspectAngle)
-
-                    ' Insert match
-                    db.Execute "INSERT INTO tblTransitAspects (PersonID, SessionID, EventID, TransitType, " & _
-                               "BaseChartID, TransitChartIDRef, NatalBodyID, TransitBodyID, AspectID, " & _
-                               "ExactDegree, OrbitApplying, RetrogradeTransit, TransitLongitude, NatalLongitude, DateCreated) " & _
-                               "VALUES (" & PersonID & "," & SessionID & "," & eventID & ", '" & transitType & "'," & _
-                               baseChartID & "," & transitChartID & "," & natalBodyID & "," & transitBodyID & "," & _
-                               aspectID & "," & Format(exact, "0.000") & "," & IIf(applying, "True", "False") & "," & _
-                               IIf(retro, "True", "False") & "," & Format(transitLon, "0.000") & "," & _
-                               Format(natalLon, "0.000") & ", Now())"
-                    aspectCount = aspectCount + 1
-                    Exit Do
-                End If
-                aspectList.MoveNext
-            Loop
-        Next j
-    Next k
-
-    MsgBox aspectCount & " transit aspects generated.", vbInformation
-    GenerateTransitChart_ViewerToSession = True
-    Exit Function
-
-ErrorHandler:
-    MsgBox "Error generating transit chart: " & Err.Description, vbCritical
-    GenerateTransitChart_ViewerToSession = False
-End Function
+'Public Function GenerateTransitChart_ViewerToSession(PersonID As Long, SessionID As Long) As Boolean
+'    Dim db As DAO.Database
+'    Dim rs As DAO.Recordset
+'    Dim baseChartID As Long, transitChartID As Long, EventID As Long
+'    Dim basePlanets As Collection, transitPlanets As Collection
+'    Dim transitType As String: transitType = "Viewer?Session"
+'    Dim aspectCount As Long: aspectCount = 0
+'    Dim aspectList As DAO.Recordset
+'    Dim k As Variant, j As Variant
+'    Dim kArr() As Variant, jArr() As Variant
+'    Dim transSpeed As Double, natalSpeed As Double
+'
+'    On Error GoTo ErrorHandler
+'
+'    Set db = CurrentDb()
+'
+'    ' 1. Lookup the base natal chart (Viewer)
+'    baseChartID = chartExists("Natal", PersonID)
+'    If baseChartID = 0 Then
+'        MsgBox "No Natal chart found for PersonID=" & PersonID, vbExclamation
+'        Exit Function
+'    End If
+'
+'   ' 2. Lookup the session chart (Session)
+'    transitChartID = chartExists("Session", , , SessionID)
+'    If transitChartID = 0 Then
+'        MsgBox "No Session chart found for SessionID=" & SessionID, vbExclamation
+'        Exit Function
+'    End If
+'
+'    ' 3. Lookup EventID from tblSessions
+'    Set rs = db.OpenRecordset("SELECT EventID FROM tblSessions WHERE SessionID=" & SessionID)
+'    If Not rs.EOF Then EventID = rs!EventID Else EventID = 0
+'    rs.Close
+'
+'    ' 4. Delete any existing transit chart for this Viewer-Session combo
+'    db.Execute "DELETE FROM tblTransitAspects WHERE PersonID=" & PersonID & _
+'               " AND SessionID=" & SessionID & " AND TransitType='" & transitType & "'"
+'
+'    ' 5. Load planetary positions for each chart
+'    Set basePlanets = LoadPlanetaryPositions(baseChartID)
+'    Set transitPlanets = LoadPlanetaryPositions(transitChartID)
+'
+'    ' 6. Load aspects
+'    Set aspectList = db.OpenRecordset("SELECT * FROM tblAspects")
+'
+'    ' 7. Loop through body pairs
+'    Dim natalBodyID As Long, transitBodyID As Long
+'    Dim natalLon As Double, transitLon As Double, diff As Double
+'   Dim orb As Double, exact As Double, applying As Boolean, retro As Boolean
+'    Dim aspectID As Long, aspectAngle As Double, aspectType As String
+'
+'    For Each k In transitPlanets
+'        kArr = k
+'        transitBodyID = kArr(0)
+'        transitLon = kArr(1)
+'        transSpeed = CDbl(kArr(2))
+'        retro = kArr(3)
+'
+'        For Each j In basePlanets
+'            jArr = j
+'            natalBodyID = jArr(0)
+'            natalLon = jArr(1)
+'            natalSpeed = CDbl(jArr(2))
+'            diff = Abs(transitLon - natalLon)
+'            If diff > 180 Then diff = 360 - diff
+'
+'            aspectList.MoveFirst
+'            Do While Not aspectList.EOF
+'                aspectAngle = aspectList!angle
+'                aspectID = aspectList!aspectID
+'                aspectType = aspectList!aspectType
+'
+'                If aspectType = "Major" Then
+'                    orb = aspectList!OrbitMajor + GetOrbAdjustment("Major")
+'                Else
+'                    orb = aspectList!OrbitMinor + GetOrbAdjustment("Minor")
+'                End If
+'
+'                If Abs(diff - aspectAngle) <= orb Then
+'                    exact = Abs(diff - aspectAngle)
+'                    applying = IsAspectApplying(transitLon, natalLon, transSpeed, natalSpeed, aspectAngle)
+'
+'                    ' Insert match
+'                    db.Execute "INSERT INTO tblTransitAspects (PersonID, SessionID, EventID, TransitType, " & _
+'                               "BaseChartID, TransitChartIDRef, NatalBodyID, TransitBodyID, AspectID, " & _
+'                               "ExactDegree, OrbitApplying, RetrogradeTransit, TransitLongitude, NatalLongitude, DateCreated) " & _
+'                               "VALUES (" & PersonID & "," & SessionID & "," & EventID & ", '" & transitType & "'," & _
+'                               baseChartID & "," & transitChartID & "," & natalBodyID & "," & transitBodyID & "," & _
+'                               aspectID & "," & Format(exact, "0.000") & "," & IIf(applying, "True", "False") & "," & _
+'                               IIf(retro, "True", "False") & "," & Format(transitLon, "0.000") & "," & _
+'                               Format(natalLon, "0.000") & ", Now())"
+'                    aspectCount = aspectCount + 1
+'                    Exit Do
+'                End If
+'                aspectList.MoveNext
+'            Loop
+'        Next j
+'    Next k
+'
+'    MsgBox aspectCount & " transit aspects generated.", vbInformation
+'    GenerateTransitChart_ViewerToSession = True
+'    Exit Function
+'
+'ErrorHandler:
+'    MsgBox "Error generating transit chart: " & Err.Description, vbCritical
+'    GenerateTransitChart_ViewerToSession = False
+'End Function
 
 ' === Helpers ===
-Private Function LoadPlanetaryPositions(chartID As Long) As Collection
+Private Function LoadPlanetaryPositions(ChartID As Long) As Collection
     Dim db As DAO.Database, rs As DAO.Recordset, col As New Collection
     Set db = CurrentDb()
-    Set rs = db.OpenRecordset("SELECT BodyID, Longitude, LongitudeSpeed FROM tblChartPositions WHERE ChartID=" & chartID)
+    Set rs = db.OpenRecordset("SELECT BodyID, Longitude, LongitudeSpeed FROM tblChartPositions WHERE ChartID=" & ChartID)
     Do While Not rs.EOF
         Dim arr(3) As Variant
         arr(0) = rs!BodyID

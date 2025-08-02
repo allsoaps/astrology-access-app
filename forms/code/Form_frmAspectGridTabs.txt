@@ -1,0 +1,123 @@
+VERSION 1.0 CLASS
+BEGIN
+  MultiUse = -1  'True
+END
+Attribute VB_Name = "Form_frmAspectGridTabs"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = True
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Option Compare Database
+Option Explicit
+
+Private Sub btnViewerSession_Click()
+    ' Set global variables for Viewer->Event chart context
+    gPersonID = gViewerPersonID          ' The current viewer
+    gEventID = gEventID                  ' Already set globally from SessionManager
+    gSessionID = gSessionID              ' Already set globally from SessionManager
+    gTransitType = "Viewer_Session"        ' Must match your modTransitChart constant
+
+    ' Optionally: Generate the chart here if you want to always have the latest
+    ' If chart generation is slow and charts rarely change, you can skip this or check if it exists first
+    Dim chartGenerated As Boolean
+    chartGenerated = GenerateTransitChartEx(gTransitType, gPersonID, gEventID, gSessionID)
+    If Not chartGenerated Then
+        MsgBox "Could not generate Viewer->Session transit chart. Check that all necessary charts exist.", vbExclamation
+        Exit Sub
+    End If
+    
+End Sub
+
+Private Sub btnViewerEvent_Click()
+    ' Set global variables for Viewer->Event chart context
+    gPersonID = gViewerPersonID          ' The current viewer
+    gEventID = gEventID                  ' Already set globally from SessionManager
+    gSessionID = gSessionID              ' Already set globally from SessionManager
+    gTransitType = "Viewer_Event"        ' Must match your modTransitChart constant
+
+    ' Optionally: Generate the chart here if you want to always have the latest
+    ' If chart generation is slow and charts rarely change, you can skip this or check if it exists first
+    Dim chartGenerated As Boolean
+    chartGenerated = GenerateTransitChartEx(gTransitType, gPersonID, gEventID, gSessionID)
+    If Not chartGenerated Then
+        MsgBox "Could not generate Viewer->Event transit chart. Check that all necessary charts exist.", vbExclamation
+        Exit Sub
+    End If
+   
+ End Sub
+
+Private Sub btnJohnSession_Click()
+    ' Set global variables for John->Session chart context
+    gPersonID = 191                      'REFERENCE_PERSON_ID      PersonID for John
+    gEventID = gEventID                  ' Already set globally from SessionManager
+    gSessionID = gSessionID              ' Already set globally from SessionManager
+    gTransitType = "Reference_Session"   ' Must match your modTransitChart constant
+
+    ' Optionally: Generate the chart here if you want to always have the latest
+    ' If chart generation is slow and charts rarely change, you can skip this or check if it exists first
+    Dim chartGenerated As Boolean
+    chartGenerated = GenerateTransitChartEx(gTransitType, gPersonID, gEventID, gSessionID)
+    If Not chartGenerated Then
+        MsgBox "Could not generate John->Session transit chart. Check that all necessary charts exist.", vbExclamation
+        Exit Sub
+    End If
+
+End Sub
+
+Private Sub btnJohnEvent_Click()
+    ' Set global variables for John->Session chart context
+    gPersonID = 191                      ' REFERENCE_PERSON_ID     PersonID for John
+    gEventID = gEventID                  ' Already set globally from SessionManager
+    gSessionID = gSessionID              ' Already set globally from SessionManager
+    gTransitType = "Reference_Event"     ' Must match your modTransitChart constant
+    
+    ' Optionally: Generate the chart here if you want to always have the latest
+    ' If chart generation is slow and charts rarely change, you can skip this or check if it exists first
+    Dim chartGenerated As Boolean
+    chartGenerated = GenerateTransitChartEx(gTransitType, gPersonID, gEventID, gSessionID)
+    If Not chartGenerated Then
+        MsgBox "Could not generate John->Event transit chart. Check that all necessary charts exist.", vbExclamation
+        Exit Sub
+    End If
+     
+End Sub
+
+Private Sub btnJohnViewer_Click()
+    ' Set global variables for John->Session chart context
+    gPersonID = 191                      ' REFERENCE_PERSON_ID     PersonID for John
+    gEventID = gEventID                  ' Already set globally from SessionManager
+    gSessionID = gSessionID              ' Already set globally from SessionManager
+    gTransitType = "Reference_Viewer"
+    
+    ' Optionally: Generate the chart here if you want to always have the latest
+    ' If chart generation is slow and charts rarely change, you can skip this or check if it exists first
+    Dim chartGenerated As Boolean
+    chartGenerated = GenerateTransitChartEx(gTransitType, gPersonID, gEventID, gSessionID)
+    If Not chartGenerated Then
+        MsgBox "Could not generate John->Viewer transit chart. Check that all necessary charts exist.", vbExclamation
+        Exit Sub
+    End If
+     
+End Sub
+
+Private Sub btnEventSession_Click()
+    ' Set global variables for John->Session chart context
+    gPersonID = gViewerPersonID          ' Or whatever is contextually correct
+    gEventID = gEventID                  ' Already set globally from SessionManager
+    gSessionID = gSessionID              ' Already set globally from SessionManager
+    gTransitType = "Event_Session"
+
+    ' Optionally: Generate the chart here if you want to always have the latest
+    ' If chart generation is slow and charts rarely change, you can skip this or check if it exists first
+    Dim chartGenerated As Boolean
+    chartGenerated = GenerateTransitChartEx(gTransitType, gPersonID, gEventID, gSessionID)
+    If Not chartGenerated Then
+        MsgBox "Could not generate Event->Session transit chart. Check that all necessary charts exist.", vbExclamation
+        Exit Sub
+    End If
+     
+End Sub
+
+
+
+

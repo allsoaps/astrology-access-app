@@ -51,7 +51,7 @@ Private Sub btnEvents_Click()
     
     ' Open the event assignment form (frmEventAssignList) in Dialog mode
     ' This form allows users to assign/unassign events and shows current assignments
-    DoCmd.OpenForm "frmEventAssignList", acViewNormal, , , , acDialog, openArgs
+    DoCmd.OpenForm "frmEventAssignList", acNormal, , , , acDialog, openArgs
     
     ' Optionally refresh the list after viewer assignment changes
     ' (in case any event data was updated)
@@ -82,21 +82,23 @@ End Sub
 Private Sub SetupListBox()
     With Me.lstStudents
         .RowSourceType = "Table/Query"
-        .ColumnCount = 7
+        .ColumnCount = 8
         .BoundColumn = 1
         .ColumnHeads = False
-        .ColumnWidths = "1cm;3cm;3cm;2.5cm;2.5cm;2.5cm;3cm"
+        .ColumnWidths = "1cm;2.5cm;3cm;2.25cm;2.25cm;1.5cm;2cm;3cm"
         .RowSource = _
             "SELECT p.PersonID, p.FirstName, p.LastName, " & _
             "Format(p.BirthDate,'mm/dd/yyyy') AS DOB, " & _
             "Format(p.BirthTime,'hh:nn:ss') AS TOB, " & _
             "Nz(p.Initials,'') AS Initials, " & _
+            "p.NatalChartGenerated, " & _
             "l.City & IIf(Len(l.[StateProvince])>0,', ' & l.[StateProvince],'') & ', ' & l.Country AS BirthPlace " & _
             "FROM tblPeople AS p " & _
             "LEFT JOIN tblLocations AS l ON p.LocationID = l.LocationID " & _
             "ORDER BY p.LastName, p.FirstName;"
     End With
 End Sub
+
 
 '=== Search button ===
 Private Sub btnSearch_Click()
@@ -231,16 +233,16 @@ Private Sub btnViewChart_Click()
     End If
     
     ' Get the ChartID for this person's natal chart
-    Dim chartID As Long
-    chartID = GetNatalChartID(m_PersonID)
+    Dim ChartID As Long
+    ChartID = GetNatalChartID(m_PersonID)
     
-    If chartID = 0 Then
+    If ChartID = 0 Then
         MsgBox "Unable to find natal chart in database. Please regenerate the chart.", vbExclamation, "Chart Not Found"
         Exit Sub
     End If
     
     ' Open the aspect grid with the natal chart
-    DoCmd.OpenForm "frmAspectHalfGrid", acNormal, , , , , CStr(chartID)
+    DoCmd.OpenForm "frmAspectHalfGrid", acNormal, , , , , CStr(ChartID)
     
     Exit Sub
     
@@ -292,7 +294,7 @@ Private Function GetNatalChartID(PersonID As Long) As Long
     Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
     
     If Not rs.EOF Then
-        GetNatalChartID = rs!chartID
+        GetNatalChartID = rs!ChartID
     Else
         GetNatalChartID = 0
     End If
@@ -315,12 +317,12 @@ End Function
 
 
 '=== Helper to check chart status ===
-Private Function ChartGenerated(PersonID As Long) As Boolean
+Private Function chartGenerated(PersonID As Long) As Boolean
     Dim rs As DAO.Recordset
     Set rs = CurrentDb.OpenRecordset( _
         "SELECT NatalChartGenerated FROM tblPeople WHERE PersonID=" & PersonID, _
         dbOpenSnapshot)
-    ChartGenerated = (Not rs.EOF And rs!NatalChartGenerated)
+    chartGenerated = (Not rs.EOF And rs!NatalChartGenerated)
     rs.Close: Set rs = Nothing
 End Function
 
@@ -332,6 +334,7 @@ End Sub
 Private Sub Form_Open(Cancel As Integer)
     SetupListBox
 End Sub
+
 
 '=== Double-click list opens record ===
 Private Sub lstStudents_DblClick(Cancel As Integer)
@@ -350,9 +353,9 @@ Private Sub btnViewSessions_Click()
     End If
     
     ' Pass the context to the Session Manager form.
-    ' Format: "PersonID=123"
+    ' Format: "PersonID|123"
     Dim openArgs As String
-    openArgs = "PersonID=" & m_PersonID
+    openArgs = "PersonID|" & m_PersonID & "|EventID|" & 0
     
     ' Open the Session Manager form
     DoCmd.OpenForm "frmSessionManager", acNormal, , , , , openArgs
@@ -442,16 +445,16 @@ Private Sub btnViewNatalChart_Click()
     End If
     
     ' Get the ChartID for this person's natal chart
-    Dim chartID As Long
-    chartID = GetNatalChartID(m_PersonID)
+    Dim ChartID As Long
+    ChartID = GetNatalChartID(m_PersonID)
     
-    If chartID = 0 Then
+    If ChartID = 0 Then
         MsgBox "Unable to find natal chart in database. Please regenerate the chart.", vbExclamation, "Chart Not Found"
         Exit Sub
     End If
     
     ' Open the aspect grid with the natal chart
-    DoCmd.OpenForm "frmAspectHalfGrid", acNormal, , , , , CStr(chartID)
+    DoCmd.OpenForm "frmAspectHalfGrid", acNormal, , , , , CStr(ChartID)
     
     Exit Sub
     

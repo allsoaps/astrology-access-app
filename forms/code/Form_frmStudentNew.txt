@@ -9,92 +9,6 @@ Attribute VB_PredeclaredId = True
 Attribute VB_Exposed = False
 Option Compare Database
 Option Explicit
-#Const DEBUG_MODE = False
-
-' Swiss Ephemeris declarations
-' Constants for planets and calculation flags
-Private Const SE_SUN As Long = 0
-Private Const SE_MOON As Long = 1
-Private Const SE_MERCURY As Long = 2
-Private Const SE_VENUS As Long = 3
-Private Const SE_MARS As Long = 4
-Private Const SE_JUPITER As Long = 5
-Private Const SE_SATURN As Long = 6
-Private Const SE_URANUS As Long = 7
-Private Const SE_NEPTUNE As Long = 8
-Private Const SE_PLUTO As Long = 9
-
-' Calculation flags
-Private Const SEFLG_SPEED As Long = 256 ' Return speed values
-Private Const SEFLG_SWIEPH As Long = 2 ' Use Swiss Ephemeris
-
-' Swiss Ephemeris DLL declarations
-#If VBA7 Then
-    #If Win64 Then
-        ' 64-bit declarations
-        Private Declare PtrSafe Function swe_calc_ut Lib "swedll64.dll" ( _
-            ByVal tjd_ut As Double, _
-            ByVal ipl As Long, _
-            ByVal iflag As Long, _
-            ByRef xx As Double, _
-            ByRef serr As String) As Long
-            
-        Private Declare PtrSafe Function swe_set_ephe_path Lib "swedll64.dll" ( _
-            ByVal path As String) As Long
-            
-        Private Declare PtrSafe Function swe_close Lib "swedll64.dll" () As Long
-        
-        Private Declare PtrSafe Function swe_houses Lib "swedll64.dll" ( _
-            ByVal tjd_ut As Double, _
-            ByVal geolat As Double, _
-            ByVal geolon As Double, _
-            ByVal hsys As Long, _
-            ByRef cusps As Double, _
-            ByRef ascmc As Double) As Long
-    #Else
-        ' 32-bit declarations with PtrSafe (VBA7 but not 64-bit)
-        Private Declare PtrSafe Function swe_calc_ut Lib "swedll32.dll" ( _
-            ByVal tjd_ut As Double, _
-            ByVal ipl As Long, _
-            ByVal iflag As Long, _
-            ByRef xx As Double, _
-            ByRef serr As String) As Long
-            
-        Private Declare PtrSafe Function swe_set_ephe_path Lib "swedll32.dll" ( _
-            ByVal path As String) As Long
-            
-        Private Declare PtrSafe Function swe_close Lib "swedll32.dll" () As Long
-        
-        Private Declare PtrSafe Function swe_houses Lib "swedll32.dll" ( _
-            ByVal tjd_ut As Double, _
-            ByVal geolat As Double, _
-            ByVal geolon As Double, _
-            ByVal hsys As Long, _
-            ByRef cusps As Double, _
-            ByRef ascmc As Double) As Long
-    #End If
-#Else
-    ' 32-bit declarations (pre-VBA7)
-    'Private Declare Function swe_calc_ut Lib "swedll32.dll" ( _
-    '   ByVal tjd_ut As Double, _
-    '   ByVal ipl As Long, _
-    '   ByVal iflag As Long, _
-    '   ByRef xx As Double, _
-    '   ByRef serr As String) As Long
-        
-   'Private Declare Function swe_set_ephe_path Lib "swedll32.dll" ( _
-   '    ByVal path As String) As Long
-        
-   'Private Declare Function swe_close Lib "swedll32.dll" () As Long
-    
-   'Private Declare Function swe_houses Lib "swedll32.dll" ( _
-   '    ByVal tjd_ut As Double, _
-   '    ByVal geolat As Double, _
-   '    ByVal geolon As Double, _
-   '    ByVal hsys As Long, _
-   '    ByRef cusps As Double, _
-   '    ByRef ascmc As Double) As Long
-#End If
     
 ' Module-level vars
 Dim mlocationID     As Long
@@ -211,7 +125,7 @@ Private Sub FillLocationCoordinates(LocationID As Long)
     Set rs = db.OpenRecordset(sql)
     
     If Not rs.EOF Then
-        Me.txtLatitude.value = rs!latitude
+        Me.txtLatitude.value = rs!Latitude
         Me.txtLongitude.value = rs!longitude
     End If
     
@@ -429,16 +343,16 @@ Private Sub btnViewNatalChart_Click()
     End If
     
     ' Get the ChartID for this person's natal chart
-    Dim chartID As Long
-    chartID = GetNatalChartID(mPersonID)
+    Dim ChartID As Long
+    ChartID = GetNatalChartID(mPersonID)
     
-    If chartID = 0 Then
+    If ChartID = 0 Then
         MsgBox "Unable to find natal chart in database. Please regenerate the chart.", vbExclamation, "Chart Not Found"
         Exit Sub
     End If
     
     ' Open the aspect grid with the natal chart
-    DoCmd.OpenForm "frmAspectHalfGrid", acNormal, , , , , CStr(chartID)
+    DoCmd.OpenForm "frmAspectHalfGrid", acNormal, , , , , CStr(ChartID)
     
     Exit Sub
     
@@ -490,7 +404,7 @@ Private Function GetNatalChartID(PersonID As Long) As Long
     Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
     
     If Not rs.EOF Then
-        GetNatalChartID = rs!chartID
+        GetNatalChartID = rs!ChartID
     Else
         GetNatalChartID = 0
     End If
