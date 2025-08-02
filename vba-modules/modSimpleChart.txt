@@ -9,13 +9,13 @@ Public Function GenerateNatalChart(PersonID As Long) As Boolean
     Dim db As DAO.Database
     Dim rs As DAO.Recordset
     Dim sql As String
-    Dim chartID As Long
+    Dim ChartID As Long
     
     ' Person data
     Dim BirthDate As Date
     Dim BirthTime As Date
     Dim LocationID As Long
-    Dim latitude As Double
+    Dim Latitude As Double
     Dim longitude As Double
     
     ' Calculation data
@@ -43,17 +43,17 @@ Public Function GenerateNatalChart(PersonID As Long) As Boolean
     BirthDate = rs!BirthDate
     BirthTime = rs!BirthTime
     LocationID = rs!LocationID
-    latitude = rs!latitude
+    Latitude = rs!Latitude
     longitude = rs!longitude
     
     rs.Close
     
     ' Check if natal chart already exists
-    chartID = GetExistingNatalChart(PersonID)
-    If chartID > 0 Then
-        Debug.Print "Natal chart already exists with ChartID: " & chartID
+    ChartID = GetExistingNatalChart(PersonID)
+    If ChartID > 0 Then
+        Debug.Print "Natal chart already exists with ChartID: " & ChartID
         Debug.Print "Deleting existing chart..."
-        If Not DeleteExistingChart(chartID) Then
+        If Not DeleteExistingChart(ChartID) Then
             Debug.Print "Error: Failed to delete existing chart"
             GenerateNatalChart = False
             Exit Function
@@ -73,8 +73,8 @@ Public Function GenerateNatalChart(PersonID As Long) As Boolean
     
     
     ' Create chart record
-    chartID = CreateChartRecord(PersonID, "Natal", BirthDate, BirthTime, LocationID)
-    If chartID = 0 Then
+    ChartID = CreateChartRecord(PersonID, "Natal", BirthDate, BirthTime, LocationID)
+    If ChartID = 0 Then
         Debug.Print "Error: Failed to create chart record"
         GenerateNatalChart = False
         Exit Function
@@ -82,21 +82,21 @@ Public Function GenerateNatalChart(PersonID As Long) As Boolean
     
     
     ' Calculate and save planetary positions
-    If Not CalculateAndSavePlanets(chartID, julianDay, latitude, longitude) Then
+    If Not CalculateAndSavePlanets(ChartID, julianDay, Latitude, longitude) Then
         Debug.Print "Error: Failed to calculate planetary positions"
         GenerateNatalChart = False
         Exit Function
     End If
     
     ' Calculate and save house angles
-    If Not CalculateAndSaveAngles(chartID, julianDay, latitude, longitude) Then
+    If Not CalculateAndSaveAngles(ChartID, julianDay, Latitude, longitude) Then
         Debug.Print "Error: Failed to calculate house angles"
         GenerateNatalChart = False
         Exit Function
     End If
     
     ' Calculate and save aspects between planets
-    If Not CalculateAndSaveAspects(chartID) Then
+    If Not CalculateAndSaveAspects(ChartID) Then
         Debug.Print "Error: Failed to calculate aspects"
         GenerateNatalChart = False
         Exit Function
@@ -137,7 +137,7 @@ Private Function GetExistingNatalChart(PersonID As Long) As Long
     Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
     
     If Not rs.EOF Then
-        GetExistingNatalChart = rs!chartID
+        GetExistingNatalChart = rs!ChartID
     Else
         GetExistingNatalChart = 0
     End If
@@ -158,7 +158,7 @@ End Function
 
 ' Replace your existing DeleteExistingChart function in modSimpleChart with this updated version:
 
-Private Function DeleteExistingChart(chartID As Long) As Boolean
+Private Function DeleteExistingChart(ChartID As Long) As Boolean
     Dim db As DAO.Database
     
     On Error GoTo ErrorHandler
@@ -167,13 +167,13 @@ Private Function DeleteExistingChart(chartID As Long) As Boolean
     
     ' Delete in correct order due to foreign key constraints
     ' Delete aspects first (they reference ChartID)
-    db.Execute "DELETE FROM tblChartAspects WHERE ChartID = " & chartID
+    db.Execute "DELETE FROM tblChartAspects WHERE ChartID = " & ChartID
     
     ' Delete positions next (they reference ChartID)
-    db.Execute "DELETE FROM tblChartPositions WHERE ChartID = " & chartID
+    db.Execute "DELETE FROM tblChartPositions WHERE ChartID = " & ChartID
     
     ' Delete chart record last
-    db.Execute "DELETE FROM tblCharts WHERE ChartID = " & chartID
+    db.Execute "DELETE FROM tblCharts WHERE ChartID = " & ChartID
     
     DeleteExistingChart = True
     Set db = Nothing
@@ -213,7 +213,7 @@ Private Function CreateChartRecord(PersonID As Long, chartType As String, ChartD
     
     ' Get the ChartID that was just created
     rs.Bookmark = rs.LastModified
-    CreateChartRecord = rs!chartID
+    CreateChartRecord = rs!ChartID
     
     
     rs.Close
@@ -233,7 +233,7 @@ ErrorHandler:
 End Function
 
 
-Private Function CalculateAndSaveAngles(chartID As Long, julianDay As Double, lat As Double, lng As Double) As Boolean
+Private Function CalculateAndSaveAngles(ChartID As Long, julianDay As Double, lat As Double, lng As Double) As Boolean
     Dim db As DAO.Database
     Dim rs As DAO.Recordset
     Dim houseResult As Variant
@@ -259,68 +259,68 @@ Private Function CalculateAndSaveAngles(chartID As Long, julianDay As Double, la
         ' Save Ascendant
         rs.AddNew
         With rs
-            !chartID = chartID
+            !ChartID = ChartID
             !BodyID = 15  ' Ascendant
             !longitude = ascendant
-            !latitude = 0
+            !Latitude = 0
             !distance = 0
             !LongitudeSpeed = 0
             !LatitudeSpeed = 0
             !HousePosition = 0
             !SignID = GetSignFromLongitude(ascendant)
             !IsRetrograde = False
-            !declination = 0
+            !Declination = 0
         End With
         rs.Update
         
         ' Save Midheaven
         rs.AddNew
         With rs
-            !chartID = chartID
+            !ChartID = ChartID
             !BodyID = 16  ' Midheaven
             !longitude = midheaven
-            !latitude = 0
+            !Latitude = 0
             !distance = 0
             !LongitudeSpeed = 0
             !LatitudeSpeed = 0
             !HousePosition = 0
             !SignID = GetSignFromLongitude(midheaven)
             !IsRetrograde = False
-            !declination = 0
+            !Declination = 0
         End With
         rs.Update
         
         ' Save Descendant
         rs.AddNew
         With rs
-            !chartID = chartID
+            !ChartID = ChartID
             !BodyID = 17  ' Descendant
             !longitude = descendant
-            !latitude = 0
+            !Latitude = 0
             !distance = 0
             !LongitudeSpeed = 0
             !LatitudeSpeed = 0
             !HousePosition = 0
             !SignID = GetSignFromLongitude(descendant)
             !IsRetrograde = False
-            !declination = 0
+            !Declination = 0
         End With
         rs.Update
         
         ' Save Imum Coeli
         rs.AddNew
         With rs
-            !chartID = chartID
+            !ChartID = ChartID
             !BodyID = 18  ' Imum Coeli
             !longitude = imumCoeli
-            !latitude = 0
+            !Latitude = 0
             !distance = 0
             !LongitudeSpeed = 0
             !LatitudeSpeed = 0
             !HousePosition = 0
             !SignID = GetSignFromLongitude(imumCoeli)
             !IsRetrograde = False
-            !declination = 0
+            !Declination = 0
         End With
         rs.Update
         
@@ -357,13 +357,13 @@ Public Function GenerateEventChart(eventID As Long) As Boolean
     Dim db As DAO.Database
     Dim rs As DAO.Recordset
     Dim sql As String
-    Dim chartID As Long
+    Dim ChartID As Long
     
     ' Event data
     Dim eventDate As Date
     Dim eventTime As Date
     Dim LocationID As Long
-    Dim latitude As Double
+    Dim Latitude As Double
     Dim longitude As Double
     Dim eventName As String
     
@@ -393,17 +393,17 @@ Public Function GenerateEventChart(eventID As Long) As Boolean
     eventDate = rs!eventDate
     eventTime = rs!eventTime
     LocationID = rs!LocationID
-    latitude = rs!latitude
+    Latitude = rs!Latitude
     longitude = rs!longitude
     
     rs.Close
     
     ' Check if event chart already exists
-    chartID = GetExistingEventChart(eventID)
-    If chartID > 0 Then
-        Debug.Print "Event chart already exists with ChartID: " & chartID
+    ChartID = GetExistingEventChart(eventID)
+    If ChartID > 0 Then
+        Debug.Print "Event chart already exists with ChartID: " & ChartID
         Debug.Print "Deleting existing chart..."
-        If Not DeleteExistingChart(chartID) Then
+        If Not DeleteExistingChart(ChartID) Then
             Debug.Print "Error: Failed to delete existing chart"
             GenerateEventChart = False
             Exit Function
@@ -423,22 +423,22 @@ Public Function GenerateEventChart(eventID As Long) As Boolean
     
     
     ' Create chart record for event
-    chartID = CreateEventChartRecord(eventID, "Event", eventDate, eventTime, LocationID)
-    If chartID = 0 Then
+    ChartID = CreateEventChartRecord(eventID, "Event", eventDate, eventTime, LocationID)
+    If ChartID = 0 Then
         Debug.Print "Error: Failed to create chart record"
         GenerateEventChart = False
         Exit Function
     End If
     
     ' Calculate and save planetary positions
-    If Not CalculateAndSavePlanets(chartID, julianDay, latitude, longitude) Then
+    If Not CalculateAndSavePlanets(ChartID, julianDay, Latitude, longitude) Then
         Debug.Print "Error: Failed to calculate planetary positions"
         GenerateEventChart = False
         Exit Function
     End If
     
     ' Calculate and save house angles
-    If Not CalculateAndSaveAngles(chartID, julianDay, latitude, longitude) Then
+    If Not CalculateAndSaveAngles(ChartID, julianDay, Latitude, longitude) Then
         Debug.Print "Error: Failed to calculate house angles"
         GenerateEventChart = False
         Exit Function
@@ -446,7 +446,7 @@ Public Function GenerateEventChart(eventID As Long) As Boolean
     
     
     ' Calculate and save aspects between planets
-    If Not CalculateAndSaveAspects(chartID) Then
+    If Not CalculateAndSaveAspects(ChartID) Then
         Debug.Print "Error: Failed to calculate aspects"
         GenerateEventChart = False
         Exit Function
@@ -484,7 +484,7 @@ Private Function GetExistingEventChart(eventID As Long) As Long
     Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
     
     If Not rs.EOF Then
-        GetExistingEventChart = rs!chartID
+        GetExistingEventChart = rs!ChartID
     Else
         GetExistingEventChart = 0
     End If
@@ -534,7 +534,7 @@ Private Function CreateEventChartRecord(eventID As Long, chartType As String, Ch
     
     ' Get the ChartID that was just created
     rs.Bookmark = rs.LastModified
-    CreateEventChartRecord = rs!chartID
+    CreateEventChartRecord = rs!ChartID
     
     rs.Close
     Set rs = Nothing
@@ -558,13 +558,13 @@ Public Function GenerateSessionChart(SessionID As Long) As Boolean
     Dim db As DAO.Database
     Dim rs As DAO.Recordset
     Dim sql As String
-    Dim chartID As Long
+    Dim ChartID As Long
     
     ' Session data
     Dim sessionDate As Date
     Dim sessionTime As Date
     Dim LocationID As Long
-    Dim latitude As Double
+    Dim Latitude As Double
     Dim longitude As Double
     
     ' Calculation data
@@ -592,17 +592,17 @@ Public Function GenerateSessionChart(SessionID As Long) As Boolean
     sessionDate = rs!sessionDate
     sessionTime = rs!SessionStartTime
     LocationID = rs!LocationID
-    latitude = rs!latitude
+    Latitude = rs!Latitude
     longitude = rs!longitude
     
     rs.Close
     
     ' Check if session chart already exists
-    chartID = GetExistingSessionChart(SessionID)
-    If chartID > 0 Then
-        Debug.Print "Session chart already exists with ChartID: " & chartID
+    ChartID = GetExistingSessionChart(SessionID)
+    If ChartID > 0 Then
+        Debug.Print "Session chart already exists with ChartID: " & ChartID
         Debug.Print "Deleting existing chart..."
-        If Not DeleteExistingChart(chartID) Then
+        If Not DeleteExistingChart(ChartID) Then
             Debug.Print "Error: Failed to delete existing chart"
             GenerateSessionChart = False
             Exit Function
@@ -621,29 +621,29 @@ Public Function GenerateSessionChart(SessionID As Long) As Boolean
     julianDay = modUtilities.DateToJulianDay(combinedDateTime)
     
     ' Create chart record for session
-    chartID = CreateSessionChartRecord(SessionID, "Session", sessionDate, sessionTime, LocationID)
-    If chartID = 0 Then
+    ChartID = CreateSessionChartRecord(SessionID, "Session", sessionDate, sessionTime, LocationID)
+    If ChartID = 0 Then
         Debug.Print "Error: Failed to create chart record"
         GenerateSessionChart = False
         Exit Function
     End If
     
     ' Calculate and save planetary positions
-    If Not CalculateAndSavePlanets(chartID, julianDay, latitude, longitude) Then
+    If Not CalculateAndSavePlanets(ChartID, julianDay, Latitude, longitude) Then
         Debug.Print "Error: Failed to calculate planetary positions"
         GenerateSessionChart = False
         Exit Function
     End If
     
     ' Calculate and save house angles
-    If Not CalculateAndSaveAngles(chartID, julianDay, latitude, longitude) Then
+    If Not CalculateAndSaveAngles(ChartID, julianDay, Latitude, longitude) Then
         Debug.Print "Error: Failed to calculate house angles"
         GenerateSessionChart = False
         Exit Function
     End If
     
     ' Calculate and save aspects between planets
-    If Not CalculateAndSaveAspects(chartID) Then
+    If Not CalculateAndSaveAspects(ChartID) Then
         Debug.Print "Error: Failed to calculate aspects"
         GenerateSessionChart = False
         Exit Function
@@ -680,7 +680,7 @@ Private Function GetExistingSessionChart(SessionID As Long) As Long
     Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
     
     If Not rs.EOF Then
-        GetExistingSessionChart = rs!chartID
+        GetExistingSessionChart = rs!ChartID
     Else
         GetExistingSessionChart = 0
     End If
@@ -727,7 +727,7 @@ Private Function CreateSessionChartRecord(SessionID As Long, chartType As String
     
     ' Get the ChartID that was just created
     rs.Bookmark = rs.LastModified
-    CreateSessionChartRecord = rs!chartID
+    CreateSessionChartRecord = rs!ChartID
     
     rs.Close
     Set rs = Nothing
@@ -745,7 +745,7 @@ ErrorHandler:
     Set db = Nothing
 End Function
 
-Private Function CalculateAndSavePlanets(chartID As Long, julianDay As Double, lat As Double, lng As Double) As Boolean
+Private Function CalculateAndSavePlanets(ChartID As Long, julianDay As Double, lat As Double, lng As Double) As Boolean
     Dim db As DAO.Database
     Dim rs As DAO.Recordset
     Dim rsPlanets As DAO.Recordset
@@ -753,7 +753,7 @@ Private Function CalculateAndSavePlanets(chartID As Long, julianDay As Double, l
     
     ' Planet calculation variables
     Dim planetData As Variant
-    Dim declination As Double
+    Dim Declination As Double
     
     On Error GoTo ErrorHandler
     
@@ -775,32 +775,32 @@ Private Function CalculateAndSavePlanets(chartID As Long, julianDay As Double, l
 ' Check if calculation was successful (first element won't be -999)
         If IsArray(planetData) And planetData(0) <> -999 Then
             ' Extract values from variant array to double variables
-            Dim longitude As Double, latitude As Double, distance As Double
+            Dim longitude As Double, Latitude As Double, distance As Double
             Dim lonSpeed As Double, latSpeed As Double
             
             longitude = CDbl(planetData(0))
-            latitude = CDbl(planetData(1))
+            Latitude = CDbl(planetData(1))
             distance = CDbl(planetData(2))
             lonSpeed = CDbl(planetData(3))
             latSpeed = CDbl(planetData(4))
             
             ' Calculate declination (convert ecliptic to equatorial coordinates)
-            declination = CalculateDeclination(longitude, latitude, julianDay)
+            Declination = CalculateDeclination(longitude, Latitude, julianDay)
             
             ' Save complete position data to database
             rs.AddNew
             With rs
-                !chartID = chartID
+                !ChartID = ChartID
                 !BodyID = rsPlanets!BodyID
                 !longitude = longitude         ' Ecliptic longitude
-                !latitude = latitude           ' Ecliptic latitude
+                !Latitude = Latitude           ' Ecliptic latitude
                 !distance = distance           ' Distance from Earth (AU)
                 !LongitudeSpeed = lonSpeed     ' Daily motion in longitude
                 !LatitudeSpeed = latSpeed      ' Daily motion in latitude
                 !HousePosition = 0             ' Will calculate separately if needed
                 !SignID = GetSignFromLongitude(longitude)
                 !IsRetrograde = (lonSpeed < 0) ' Retrograde if longitude speed is negative
-                !declination = declination     ' Celestial latitude
+                !Declination = Declination     ' Celestial latitude
             End With
             rs.Update
             
@@ -841,7 +841,7 @@ ErrorHandler:
 End Function
 
 ' Helper function to calculate declination (celestial latitude)
-Private Function CalculateDeclination(longitude As Double, latitude As Double, julianDay As Double) As Double
+Private Function CalculateDeclination(longitude As Double, Latitude As Double, julianDay As Double) As Double
     ' This is a simplified calculation. For precise declination, you might want to use
     ' Swiss Ephemeris coordinate conversion functions, but this approximation works well.
     
@@ -854,7 +854,7 @@ Private Function CalculateDeclination(longitude As Double, latitude As Double, j
     
     Dim lonRad As Double, latRad As Double, oblRad As Double
     lonRad = longitude * (3.14159265 / 180)  ' Convert to radians
-    latRad = latitude * (3.14159265 / 180)
+    latRad = Latitude * (3.14159265 / 180)
     oblRad = obliquity * (3.14159265 / 180)
     
     Dim sinDec As Double
@@ -877,7 +877,7 @@ End Function
 
 ' Replace the existing CalculateAndSaveAspects function in modSimpleChart with this enhanced version:
 
-Private Function CalculateAndSaveAspects(chartID As Long) As Boolean
+Private Function CalculateAndSaveAspects(ChartID As Long) As Boolean
     Dim db As DAO.Database
     Dim rsPlanets As DAO.Recordset
     Dim rsAngles As DAO.Recordset
@@ -902,7 +902,7 @@ Private Function CalculateAndSaveAspects(chartID As Long) As Boolean
     ' Get all planetary positions for this chart (planets, asteroids, nodes)
     sql = "SELECT cp.BodyID, cp.Longitude, cb.BodyName, cb.BodyType " & _
           "FROM tblChartPositions cp INNER JOIN tblCelestialBodies cb ON cp.BodyID = cb.BodyID " & _
-          "WHERE cp.ChartID = " & chartID & " AND cb.BodyType IN ('Planet', 'Asteroid', 'Node') " & _
+          "WHERE cp.ChartID = " & ChartID & " AND cb.BodyType IN ('Planet', 'Asteroid', 'Node') " & _
           "ORDER BY cp.BodyID"
     
     Set rsPlanets = db.OpenRecordset(sql, dbOpenSnapshot)
@@ -910,7 +910,7 @@ Private Function CalculateAndSaveAspects(chartID As Long) As Boolean
     ' Get all angle positions for this chart (ASC, MC, DESC, IC)
     sql = "SELECT cp.BodyID, cp.Longitude, cb.BodyName, cb.BodyType " & _
           "FROM tblChartPositions cp INNER JOIN tblCelestialBodies cb ON cp.BodyID = cb.BodyID " & _
-          "WHERE cp.ChartID = " & chartID & " AND cb.BodyType = 'Angle' " & _
+          "WHERE cp.ChartID = " & ChartID & " AND cb.BodyType = 'Angle' " & _
           "ORDER BY cp.BodyID"
     
     Set rsAngles = db.OpenRecordset(sql, dbOpenSnapshot)
@@ -938,7 +938,7 @@ Private Function CalculateAndSaveAspects(chartID As Long) As Boolean
             longitude2 = rsPlanets2!longitude
             
             ' Calculate and save aspects between these two planets
-            Call CalculateAspectsBetweenBodies(chartID, planet1ID, longitude1, planet2ID, longitude2, _
+            Call CalculateAspectsBetweenBodies(ChartID, planet1ID, longitude1, planet2ID, longitude2, _
                                              rsAspectTypes, rsAspects, "Planet")
             
             rsPlanets2.MoveNext
@@ -962,7 +962,7 @@ Private Function CalculateAndSaveAspects(chartID As Long) As Boolean
             longitude2 = rsAngles!longitude
             
             ' Calculate and save aspects between planet and angle
-            Call CalculateAspectsBetweenBodies(chartID, planet1ID, longitude1, planet2ID, longitude2, _
+            Call CalculateAspectsBetweenBodies(ChartID, planet1ID, longitude1, planet2ID, longitude2, _
                                              rsAspectTypes, rsAspects, "Angle")
             
             rsAngles.MoveNext
@@ -1213,7 +1213,7 @@ End Function
 
 
 ' Function to determine if an aspect is applying or separating
-Private Function IsAspectApplying(chartID As Long, body1ID As Long, body2ID As Long, _
+Private Function IsAspectApplying(ChartID As Long, body1ID As Long, body2ID As Long, _
                                 aspectAngle As Double) As Boolean
     
     Dim db As DAO.Database
@@ -1234,7 +1234,7 @@ Private Function IsAspectApplying(chartID As Long, body1ID As Long, body2ID As L
     ' Get positions and speeds for both bodies
     sql = "SELECT cp.BodyID, cp.Longitude, cp.LongitudeSpeed " & _
           "FROM tblChartPositions cp " & _
-          "WHERE cp.ChartID = " & chartID & " AND cp.BodyID IN (" & body1ID & "," & body2ID & ")"
+          "WHERE cp.ChartID = " & ChartID & " AND cp.BodyID IN (" & body1ID & "," & body2ID & ")"
     
     Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
     
@@ -1297,7 +1297,7 @@ ErrorHandler:
 End Function
 
 ' Enhanced CalculateAspectsBetweenBodies function with applying/separating detection
-Private Sub CalculateAspectsBetweenBodies(chartID As Long, body1ID As Long, longitude1 As Double, _
+Private Sub CalculateAspectsBetweenBodies(ChartID As Long, body1ID As Long, longitude1 As Double, _
                                         body2ID As Long, longitude2 As Double, _
                                         rsAspectTypes As DAO.Recordset, rsAspects As DAO.Recordset, _
                                         targetType As String)
@@ -1325,7 +1325,7 @@ Private Sub CalculateAspectsBetweenBodies(chartID As Long, body1ID As Long, long
             If targetType = "Angle" Then
                 IsApplying = True  ' Default for angles
             Else
-                IsApplying = IsAspectApplying(chartID, body1ID, body2ID, rsAspectTypes!angle)
+                IsApplying = IsAspectApplying(ChartID, body1ID, body2ID, rsAspectTypes!angle)
             End If
         End If
         
@@ -1333,7 +1333,7 @@ Private Sub CalculateAspectsBetweenBodies(chartID As Long, body1ID As Long, long
         If aspectFound Then
             rsAspects.AddNew
             With rsAspects
-                !chartID = chartID
+                !ChartID = ChartID
                 !body1ID = body1ID
                 !body2ID = body2ID
                 !aspectID = rsAspectTypes!aspectID

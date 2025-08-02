@@ -19,7 +19,7 @@ Public Type ChartInputData
     LocationID As Long      ' Location for the chart
     ChartDate As Date       ' Date of the chart
     ChartTime As Date       ' Time of the chart
-    latitude As Double      ' Calculated from LocationID
+    Latitude As Double      ' Calculated from LocationID
     longitude As Double     ' Calculated from LocationID
 End Type
 
@@ -27,14 +27,14 @@ End Type
 Public Type PlanetaryData
     BodyID As Long
     longitude As Double
-    latitude As Double
+    Latitude As Double
     distance As Double
     LongitudeSpeed As Double
     LatitudeSpeed As Double
     HousePosition As Double
     SignID As Long
     IsRetrograde As Boolean
-    declination As Double
+    Declination As Double
 End Type
 
 ' Structure to hold house and angle data
@@ -57,7 +57,7 @@ End Type
 
 ' Main function to calculate and save a complete chart
 Public Function CalculateAndSaveChart(inputData As ChartInputData) As Long
-    Dim chartID As Long
+    Dim ChartID As Long
     Dim julianDay As Double
     Dim planets() As PlanetaryData
     Dim houses As HouseAnglesData
@@ -73,7 +73,7 @@ Public Function CalculateAndSaveChart(inputData As ChartInputData) As Long
     End If
     
     ' Get location coordinates
-    If Not GetLocationCoordinates(inputData.LocationID, inputData.latitude, inputData.longitude) Then
+    If Not GetLocationCoordinates(inputData.LocationID, inputData.Latitude, inputData.longitude) Then
         MsgBox "Failed to get location coordinates for LocationID: " & inputData.LocationID, vbCritical
         CalculateAndSaveChart = 0
         Exit Function
@@ -92,14 +92,14 @@ Public Function CalculateAndSaveChart(inputData As ChartInputData) As Long
     julianDay = modUtilities.DateToJulianDay(combinedDateTime)
     
     ' Calculate planetary positions
-    If Not CalculateAllPlanetaryPositions(julianDay, inputData.latitude, inputData.longitude, planets()) Then
+    If Not CalculateAllPlanetaryPositions(julianDay, inputData.Latitude, inputData.longitude, planets()) Then
         MsgBox "Failed to calculate planetary positions", vbCritical
         CalculateAndSaveChart = 0
         Exit Function
     End If
     
     ' Calculate houses and angles
-    If Not CalculateHousesAndAngles(julianDay, inputData.latitude, inputData.longitude, houses) Then
+    If Not CalculateHousesAndAngles(julianDay, inputData.Latitude, inputData.longitude, houses) Then
         MsgBox "Failed to calculate houses and angles", vbCritical
         CalculateAndSaveChart = 0
         Exit Function
@@ -116,13 +116,13 @@ Public Function CalculateAndSaveChart(inputData As ChartInputData) As Long
     End If
     
     ' Save all data to database
-    chartID = SaveChartToDatabase(inputData, julianDay, planets(), houses, aspects(), moonPhase)
+    ChartID = SaveChartToDatabase(inputData, julianDay, planets(), houses, aspects(), moonPhase)
     
-    If chartID > 0 Then
-        Debug.Print "Chart successfully calculated and saved with ID: " & chartID
+    If ChartID > 0 Then
+        Debug.Print "Chart successfully calculated and saved with ID: " & ChartID
     End If
     
-    CalculateAndSaveChart = chartID
+    CalculateAndSaveChart = ChartID
     Exit Function
     
 ErrorHandler:
@@ -190,7 +190,7 @@ Private Function GetLocationCoordinates(LocationID As Long, ByRef lat As Double,
     Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
     
     If Not rs.EOF Then
-        lat = rs!latitude
+        lat = rs!Latitude
         lng = rs!longitude
         GetLocationCoordinates = True
     Else
@@ -288,11 +288,11 @@ Private Function CalculateSinglePlanetPosition(julianDay As Double, lat As Doubl
         With planetData
             .BodyID = BodyID
             .longitude = xx(0)
-            .latitude = xx(1)
+            .Latitude = xx(1)
             .distance = xx(2)
             .LongitudeSpeed = xx(3)
             .LatitudeSpeed = xx(4)
-            .declination = 0 ' Will be calculated separately if needed
+            .Declination = 0 ' Will be calculated separately if needed
             .SignID = GetSignFromLongitude(.longitude)
             .IsRetrograde = (.LongitudeSpeed < 0)
             .HousePosition = 0 ' Will be calculated after houses
@@ -444,7 +444,7 @@ End Function
 Private Function SaveChartToDatabase(inputData As ChartInputData, julianDay As Double, planets() As PlanetaryData, houses As HouseAnglesData, aspects() As aspectData, moonPhase As String) As Long
     Dim db As DAO.Database
     Dim rs As DAO.Recordset
-    Dim chartID As Long
+    Dim ChartID As Long
     Dim i As Integer
     
     On Error GoTo ErrorHandler
@@ -473,24 +473,24 @@ Private Function SaveChartToDatabase(inputData As ChartInputData, julianDay As D
     End With
     
     rs.Update
-    chartID = rs!chartID
+    ChartID = rs!ChartID
     rs.Close
     
     ' Save planetary positions
     For i = LBound(planets) To UBound(planets)
-        If Not SavePlanetPosition(chartID, planets(i)) Then
+        If Not SavePlanetPosition(ChartID, planets(i)) Then
             Err.Raise vbObjectError + 1001, , "Failed to save planet position for BodyID: " & planets(i).BodyID
         End If
     Next i
     
     ' Save house angles as special positions
-    If Not SaveHouseAngles(chartID, houses) Then
+    If Not SaveHouseAngles(ChartID, houses) Then
         Err.Raise vbObjectError + 1002, , "Failed to save house angles"
     End If
     
     ' Save aspects
     For i = LBound(aspects) To UBound(aspects)
-        If Not SaveAspect(chartID, aspects(i)) Then
+        If Not SaveAspect(ChartID, aspects(i)) Then
             Err.Raise vbObjectError + 1003, , "Failed to save aspect between bodies " & aspects(i).body1ID & " and " & aspects(i).body2ID
         End If
     Next i
@@ -499,7 +499,7 @@ Private Function SaveChartToDatabase(inputData As ChartInputData, julianDay As D
     Set ws = Nothing
     Set db = Nothing
     
-    SaveChartToDatabase = chartID
+    SaveChartToDatabase = ChartID
     Exit Function
     
 ErrorHandler:
@@ -510,7 +510,7 @@ ErrorHandler:
 End Function
 
 ' Helper function to save individual planet position
-Private Function SavePlanetPosition(chartID As Long, planetData As PlanetaryData) As Boolean
+Private Function SavePlanetPosition(ChartID As Long, planetData As PlanetaryData) As Boolean
     Dim db As DAO.Database
     Dim rs As DAO.Recordset
     
@@ -521,17 +521,17 @@ Private Function SavePlanetPosition(chartID As Long, planetData As PlanetaryData
     
     rs.AddNew
     With rs
-        !chartID = chartID
+        !ChartID = ChartID
         !BodyID = planetData.BodyID
         !longitude = planetData.longitude
-        !latitude = planetData.latitude
+        !Latitude = planetData.Latitude
         !distance = planetData.distance
         !LongitudeSpeed = planetData.LongitudeSpeed
         !LatitudeSpeed = planetData.LatitudeSpeed
         !HousePosition = planetData.HousePosition
         !SignID = planetData.SignID
         !IsRetrograde = planetData.IsRetrograde
-        !declination = planetData.declination
+        !Declination = planetData.Declination
     End With
     rs.Update
     
@@ -552,7 +552,7 @@ ErrorHandler:
 End Function
 
 ' Helper function to save house angles
-Private Function SaveHouseAngles(chartID As Long, houses As HouseAnglesData) As Boolean
+Private Function SaveHouseAngles(ChartID As Long, houses As HouseAnglesData) As Boolean
     Dim db As DAO.Database
     Dim rs As DAO.Recordset
     Dim i As Integer
@@ -565,68 +565,68 @@ Private Function SaveHouseAngles(chartID As Long, houses As HouseAnglesData) As 
     ' Save Ascendant
     rs.AddNew
     With rs
-        !chartID = chartID
+        !ChartID = ChartID
         !BodyID = 15  ' Ascendant
         !longitude = houses.ascendant
-        !latitude = 0
+        !Latitude = 0
         !distance = 0
         !LongitudeSpeed = 0
         !LatitudeSpeed = 0
         !HousePosition = 0
         !SignID = GetSignFromLongitude(houses.ascendant)
         !IsRetrograde = False
-        !declination = 0
+        !Declination = 0
     End With
     rs.Update
     
     ' Save Midheaven
     rs.AddNew
     With rs
-        !chartID = chartID
+        !ChartID = ChartID
         !BodyID = 16  ' Midheaven
         !longitude = houses.midheaven
-        !latitude = 0
+        !Latitude = 0
         !distance = 0
         !LongitudeSpeed = 0
         !LatitudeSpeed = 0
         !HousePosition = 0
         !SignID = GetSignFromLongitude(houses.midheaven)
         !IsRetrograde = False
-        !declination = 0
+        !Declination = 0
     End With
     rs.Update
     
     ' Save Descendant
     rs.AddNew
     With rs
-        !chartID = chartID
+        !ChartID = ChartID
         !BodyID = 17  ' Descendant
         !longitude = houses.descendant
-        !latitude = 0
+        !Latitude = 0
         !distance = 0
         !LongitudeSpeed = 0
         !LatitudeSpeed = 0
         !HousePosition = 0
         !SignID = GetSignFromLongitude(houses.descendant)
         !IsRetrograde = False
-        !declination = 0
+        !Declination = 0
     End With
     rs.Update
     
     ' Save Imum Coeli
     rs.AddNew
     With rs
-        !chartID = chartID
+        !ChartID = ChartID
         !BodyID = 18  ' Imum Coeli
         !longitude = houses.imumCoeli
-        !latitude = 0
+        !Latitude = 0
         !distance = 0
         !LongitudeSpeed = 0
         !LatitudeSpeed = 0
         !HousePosition = 0
         !SignID = GetSignFromLongitude(houses.imumCoeli)
         !IsRetrograde = False
-        !declination = 0
+        !Declination = 0
     End With
     rs.Update
     
@@ -647,7 +647,7 @@ ErrorHandler:
 End Function
 
 ' Helper function to save individual aspect
-Private Function SaveAspect(chartID As Long, aspectData As aspectData) As Boolean
+Private Function SaveAspect(ChartID As Long, aspectData As aspectData) As Boolean
     Dim db As DAO.Database
     Dim rs As DAO.Recordset
     
@@ -658,7 +658,7 @@ Private Function SaveAspect(chartID As Long, aspectData As aspectData) As Boolea
     
     rs.AddNew
     With rs
-        !chartID = chartID
+        !ChartID = ChartID
         !body1ID = aspectData.body1ID
         !body2ID = aspectData.body2ID
         !aspectID = aspectData.aspectID
@@ -994,7 +994,7 @@ Public Function chartExists(chartType As String, Optional PersonID As Long = 0, 
     Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
     
     If Not rs.EOF Then
-        chartExists = rs!chartID
+        chartExists = rs!ChartID
     Else
         chartExists = 0
     End If
@@ -1014,7 +1014,7 @@ ErrorHandler:
 End Function
 
 ' Function to delete a chart and all its data
-Public Function DeleteChart(chartID As Long) As Boolean
+Public Function DeleteChart(ChartID As Long) As Boolean
     Dim db As DAO.Database
     Dim ws As DAO.Workspace
     
@@ -1025,13 +1025,13 @@ Public Function DeleteChart(chartID As Long) As Boolean
     ws.BeginTrans
     
     ' Delete aspects first (foreign key constraint)
-    db.Execute "DELETE FROM tblChartAspects WHERE ChartID = " & chartID
+    db.Execute "DELETE FROM tblChartAspects WHERE ChartID = " & ChartID
     
     ' Delete positions
-    db.Execute "DELETE FROM tblChartPositions WHERE ChartID = " & chartID
+    db.Execute "DELETE FROM tblChartPositions WHERE ChartID = " & ChartID
     
     ' Delete chart record
-    db.Execute "DELETE FROM tblCharts WHERE ChartID = " & chartID
+    db.Execute "DELETE FROM tblCharts WHERE ChartID = " & ChartID
     
     ws.CommitTrans
     Set ws = Nothing
@@ -1077,19 +1077,19 @@ End Function
 
 ' Function specifically for your existing forms integration
 Public Function GenerateNatalChartForStudent(PersonID As Long) As Boolean
-    Dim chartID As Long
+    Dim ChartID As Long
     
     ' Check if chart already exists
-    chartID = chartExists(CHART_TYPE_NATAL, PersonID)
+    ChartID = chartExists(CHART_TYPE_NATAL, PersonID)
     
-    If chartID > 0 Then
+    If ChartID > 0 Then
         ' Chart already exists, ask user if they want to regenerate
         If MsgBox("Natal chart already exists for this person. Do you want to regenerate it?", vbYesNo + vbQuestion) = vbNo Then
             GenerateNatalChartForStudent = True
             Exit Function
         Else
             ' Delete existing chart
-            If Not DeleteChart(chartID) Then
+            If Not DeleteChart(ChartID) Then
                 GenerateNatalChartForStudent = False
                 Exit Function
             End If
@@ -1097,9 +1097,9 @@ Public Function GenerateNatalChartForStudent(PersonID As Long) As Boolean
     End If
     
     ' Generate new chart
-    chartID = CreateNatalChart(PersonID)
+    ChartID = CreateNatalChart(PersonID)
     
-    If chartID > 0 Then
+    If ChartID > 0 Then
         ' Update the NatalChartGenerated flag in tblPeople
         CurrentDb.Execute "UPDATE tblPeople SET NatalChartGenerated = True WHERE PersonID = " & PersonID
         GenerateNatalChartForStudent = True
@@ -1111,19 +1111,19 @@ Public Function GenerateNatalChartForStudent(PersonID As Long) As Boolean
 End Function
 
 Public Function GenerateEventChartForEvent(eventID As Long) As Boolean
-    Dim chartID As Long
+    Dim ChartID As Long
     
     ' Check if chart already exists
-    chartID = chartExists(CHART_TYPE_EVENT, , eventID)
+    ChartID = chartExists(CHART_TYPE_EVENT, , eventID)
     
-    If chartID > 0 Then
+    If ChartID > 0 Then
         ' Chart already exists, ask user if they want to regenerate
         If MsgBox("Event chart already exists. Do you want to regenerate it?", vbYesNo + vbQuestion) = vbNo Then
             GenerateEventChartForEvent = True
             Exit Function
         Else
             ' Delete existing chart
-            If Not DeleteChart(chartID) Then
+            If Not DeleteChart(ChartID) Then
                 GenerateEventChartForEvent = False
                 Exit Function
             End If
@@ -1131,9 +1131,9 @@ Public Function GenerateEventChartForEvent(eventID As Long) As Boolean
     End If
     
     ' Generate new chart
-    chartID = CreateEventChart(eventID)
+    ChartID = CreateEventChart(eventID)
     
-    If chartID > 0 Then
+    If ChartID > 0 Then
         GenerateEventChartForEvent = True
         MsgBox "Event chart generated successfully!", vbInformation
     Else
@@ -1143,19 +1143,19 @@ Public Function GenerateEventChartForEvent(eventID As Long) As Boolean
 End Function
 
 Public Function GenerateSessionChartForSession(SessionID As Long) As Boolean
-    Dim chartID As Long
+    Dim ChartID As Long
     
     ' Check if chart already exists
-    chartID = chartExists(CHART_TYPE_SESSION, , , SessionID)
+    ChartID = chartExists(CHART_TYPE_SESSION, , , SessionID)
     
-    If chartID > 0 Then
+    If ChartID > 0 Then
         ' Chart already exists, ask user if they want to regenerate
         If MsgBox("Session chart already exists. Do you want to regenerate it?", vbYesNo + vbQuestion) = vbNo Then
             GenerateSessionChartForSession = True
             Exit Function
         Else
             ' Delete existing chart
-            If Not DeleteChart(chartID) Then
+            If Not DeleteChart(ChartID) Then
                 GenerateSessionChartForSession = False
                 Exit Function
             End If
@@ -1163,9 +1163,9 @@ Public Function GenerateSessionChartForSession(SessionID As Long) As Boolean
     End If
     
     ' Generate new chart
-    chartID = CreateSessionChart(SessionID)
+    ChartID = CreateSessionChart(SessionID)
     
-    If chartID > 0 Then
+    If ChartID > 0 Then
         ' Update the SessionChartGenerated flag in tblSessions
         CurrentDb.Execute "UPDATE tblSessions SET SessionChartGenerated = True WHERE SessionID = " & SessionID
         GenerateSessionChartForSession = True
@@ -1178,18 +1178,18 @@ End Function
 
 ' Function to display chart in aspect grid
 Public Function ViewChartInAspectGrid(chartType As String, Optional PersonID As Long = 0, Optional eventID As Long = 0, Optional SessionID As Long = 0) As Boolean
-    Dim chartID As Long
+    Dim ChartID As Long
     
-    chartID = GetChartID(chartType, PersonID, eventID, SessionID)
+    ChartID = GetChartID(chartType, PersonID, eventID, SessionID)
     
-    If chartID = 0 Then
+    If ChartID = 0 Then
         MsgBox "No chart found for the specified criteria.", vbInformation
         ViewChartInAspectGrid = False
         Exit Function
     End If
     
     ' Use your existing aspect grid functionality
-    modCharts.ShowChartAspectGrid chartID
+    modCharts.ShowChartAspectGrid ChartID
     ViewChartInAspectGrid = True
 End Function
 

@@ -139,6 +139,12 @@ Private Sub btnSave_Click()
     ' Commit the transaction
     ws.CommitTrans
     
+    ' Unbind the form from the temporary table first
+    Me.RecordSource = ""
+    
+    ' Now delete the temporary table
+    CleanupTempTable
+    
     ' Show success message and close
     MsgBox assignmentCount & " event(s) assigned successfully.", vbInformation, "Save Complete"
     DoCmd.Close acForm, Me.name
@@ -158,6 +164,12 @@ ErrorHandler:
 End Sub
 
 Private Sub btnCancel_Click()
+    ' Unbind the form from the temporary table first
+    Me.RecordSource = ""
+    
+    ' Now delete the temporary table
+    CleanupTempTable
+    
     DoCmd.Close acForm, Me.name
 End Sub
 
@@ -202,14 +214,6 @@ Private Sub BindFormToData()
     
     Dim sql As String
     
-    ' --- CORRECTED SORT ORDER ---
-    ' Change the ORDER BY from DESC to ASC.
-    ' In Access, True = -1 and False = 0, so an ascending sort
-    ' places the -1 (True) values at the top of the list.
-'    sql = "SELECT p.EventID, p.EventName, t.IsAssigned " & _
-'          "FROM tblEvents AS p INNER JOIN " & TEMP_TABLE_NAME & " AS t " & _
-'          "ON p.EventID = t.EventID " & _
-'          "ORDER BY t.IsAssigned ASC, p.EventName;"
     sql = "SELECT p.EventID, p.EventName, p.EventDate, p.EventTime, t.IsAssigned " & _
           "FROM tblEvents AS p INNER JOIN " & TEMP_TABLE_NAME & " AS t " & _
           "ON p.EventID = t.EventID " & _
@@ -218,8 +222,6 @@ Private Sub BindFormToData()
           
     Me.RecordSource = sql
     
-    ' The fields on the form (txtEventName, etc.) must have their ControlSource
-    ' set to EventName and IsAssigned respectively. This is done in the form designer.
 End Sub
 
 Private Sub UpdateAllCheckboxes(selectState As Boolean)
@@ -243,7 +245,7 @@ Private Sub CleanupTempTable()
     Set db = CurrentDb()
     
     ' Unbind the form from the temporary table first
-    Me.RecordSource = ""
+'    Me.RecordSource = ""
     
     ' Check if table exists before trying to drop it
     Dim tableExists As Boolean
@@ -259,7 +261,9 @@ Private Sub CleanupTempTable()
     
     ' Only try to drop if it exists
     If tableExists Then
-        db.Execute "DROP TABLE " & TEMP_TABLE_NAME & ";"
+'        db.Execute "DROP TABLE " & TEMP_TABLE_NAME & ";"
+'    Me.RecordSource = ""
+        db.Execute "DROP TABLE [" & TEMP_TABLE_NAME & "];", dbFailOnError
     End If
     
     Set db = Nothing
@@ -267,7 +271,6 @@ Private Sub CleanupTempTable()
     
 ErrorHandler:
     ' Log the actual error instead of hiding it
-    Debug.Print "Error deleting temporary table " & TEMP_TABLE_NAME & ": " & Err.Description
     Set db = Nothing
 End Sub
 

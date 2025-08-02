@@ -61,7 +61,7 @@ Public Function UpdateMissingCoordinates() As String
             ' Update the record if valid coordinates were returned
             If lat <> 0 And lng <> 0 Then
                 rst.Edit
-                rst!latitude = lat
+                rst!Latitude = lat
                 rst!longitude = lng
                 rst!DateUpdated = Now()
                 rst.Update

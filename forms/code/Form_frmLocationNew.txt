@@ -127,7 +127,7 @@ Private Sub btnSave_Click()
         rs!City = strCity
         rs![StateProvince] = strState
         rs!Country = strCountry
-        rs!latitude = dblLatitude
+        rs!Latitude = dblLatitude
         rs!longitude = dblLongitude
         rs!DateCreated = Now()
         rs!DateUpdated = Now()

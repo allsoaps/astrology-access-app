@@ -105,6 +105,12 @@ Private Sub btnSave_Click()
     
     Set db = Nothing
     
+    ' Unbind the form from the temporary table first
+    Me.RecordSource = ""
+    
+    ' Now delete the temporary table
+    CleanupTempTable
+    
     MsgBox "Tolerance settings have been saved.", vbInformation, "Save Successful"
     DoCmd.Close acForm, Me.name
     
@@ -128,7 +134,14 @@ Private Sub btnCancel_Click()
                 btnSave_Click
                 
             Case vbNo
-                ' User wants to discard changes. Simply close the form.
+                ' Unbind the form from the temporary table first
+                Me.RecordSource = ""
+                
+                ' Now delete the temporary table
+                CleanupTempTable
+    
+                 ' User wants to discard changes. Simply close the form.
+   
                 DoCmd.Close acForm, Me.name
                 
             Case vbCancel
@@ -183,7 +196,8 @@ Private Sub CleanupTempTable()
     
     ' Only try to drop if it exists
     If tableExists Then
-        db.Execute "DROP TABLE " & TEMP_TABLE_NAME & ";"
+'        db.Execute "DROP TABLE " & TEMP_TABLE_NAME & ";"
+        db.Execute "DROP TABLE [" & TEMP_TABLE_NAME & "];", dbFailOnError
     End If
     
     Set db = Nothing
@@ -191,6 +205,5 @@ Private Sub CleanupTempTable()
     
 ErrorHandler:
     ' Log the actual error instead of hiding it
-    Debug.Print "Error deleting temporary table " & TEMP_TABLE_NAME & ": " & Err.Description
     Set db = Nothing
 End Sub

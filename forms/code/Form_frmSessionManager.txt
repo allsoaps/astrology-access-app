@@ -14,6 +14,7 @@ Option Explicit
 Private m_PersonID As Long
 Private m_EventID As Long
 Private m_SessionID As Long
+Private m_TargetShape As String
 
 ' These variables will now track our state manually
 Private m_CurrentSessionID As Long
@@ -47,10 +48,15 @@ Private Sub btnViewTransitChart_Click()
         Exit Sub
     End If
 
+gPersonID = m_PersonID
+gViewerPersonID = gPersonID
+gEventID = m_EventID
+gSessionID = m_SessionID
+gTransitType = "Viewer_Session"
+
     ' Pass the needed context to frmAspectGrid using openArgs
     Dim args As String
     args = m_PersonID & "|" & m_EventID & "|" & m_SessionID & "|Viewer_Session"
-'    DoCmd.OpenForm "frmAspectGrid", acNormal, , , , , args
     DoCmd.OpenForm "frmAspectGridTabs", acNormal, , , , , args
     
     Exit Sub
@@ -59,14 +65,20 @@ ErrorHandler:
     MsgBox "Error in View Transit Chart: " & Err.Description, vbCritical
 End Sub
 
+Private Sub cboTargetShape_Change()
+
+    m_TargetShape = cboTargetShape.value
+
+End Sub
+
 '================'
 '  FORM EVENTS   '
 '================'
 
 Private Sub Form_Load()
     InitializeForm
-    UpdateFormButtons
-    LoadToleranceRules
+'    UpdateFormButtons
+'    LoadToleranceRules
 
 End Sub
 
@@ -124,7 +136,7 @@ Private Sub chkUseBirthLocation_AfterUpdate()
                 Me.txtCity.value = ProperCase(rs!City)
                 Me.txtStateProv.value = Nz(UCase(rs!StateProvince), "")
                 Me.cboCountry.value = rs!Country
-                Me.txtLatitude.value = rs!latitude
+                Me.txtLatitude.value = rs!Latitude
                 Me.txtLongitude.value = rs!longitude
                 SetLocationControlsLocked True ' Lock the controls
             End If
@@ -183,20 +195,41 @@ Public Sub InitializeForm()
         PopulateAllEvents
     Else
         Dim args() As String
-        Dim key As String
-        Dim value As Long
+        Dim PersonID As Long
+        Dim eventID As Long
         
-        args = Split(strOpenArgs, "=")
-        key = args(0)
-        value = CLng(args(1))
+        args = Split(strOpenArgs, "|")
+        PersonID = CLng(args(1))
+        eventID = CLng(args(3))
+
+        If PersonID > 0 And eventID > 0 Then
+            m_PersonID = PersonID
+            m_EventID = eventID
+            
+            SetupForViewer PersonID
+            SetupForEvent eventID
+            Exit Sub
+        End If
         
-        Select Case key
-            Case "PersonID"
-                SetupForViewer value
-            Case "EventID"
-                SetupForEvent value
-        End Select
+        If PersonID > 0 And eventID = 0 Then
+            m_PersonID = PersonID
+            SetupForViewer PersonID
+        End If
+        
+        If PersonID = 0 And eventID > 0 Then
+             m_EventID = eventID
+             SetupForEvent eventID
+        End If
+        
+'        Select Case key
+'            Case "PersonID"
+'                SetupForViewer personID
+'            Case "EventID"
+'                SetupForEvent eventID
+'        End Select
     End If
+    
+
     Exit Sub
 
 Err_Init:
@@ -216,7 +249,6 @@ Private Sub LoadFirstSession()
         Me.txtSessionNum.value = firstSessionID
         
         LoadSessionByID firstSessionID
-'UpdateChartControls
         
     Else
         ClearSessionDetails
@@ -235,10 +267,33 @@ Private Sub LoadSessionByID(ByVal sessionID_ToLoad As Long)
     Dim rs As DAO.Recordset
     Dim sql As String
     
-    Set db = CurrentDb()
-    sql = "SELECT s.*, l.City, l.StateProvince, l.Country, l.Latitude, l.Longitude " & _
+ '===========================================
+    Dim sAccurate As Double
+    Dim sAlmostAccurate As Double
+    Dim sNotAccurate As Double
+    Dim sAlmostOpposite As Double
+    Dim sOpposite As Double
+    
+    ' Grab current scores from tblTolerances
+    sAccurate = DLookup("ToleranceScore", "tblTolerances", "ToleranceColor = 'Green'")
+    sAlmostAccurate = DLookup("ToleranceScore", "tblTolerances", "ToleranceColor = 'ltGreen'")
+    sNotAccurate = DLookup("ToleranceScore", "tblTolerances", "ToleranceColor = 'White'")
+    sAlmostOpposite = DLookup("ToleranceScore", "tblTolerances", "ToleranceColor = 'ltRed'")
+    sOpposite = DLookup("ToleranceScore", "tblTolerances", "ToleranceColor = 'Red'")
+    
+    
+ '=============================================
+ 
+ Set db = CurrentDb()
+    sql = "SELECT s.*, l.City, l.StateProvince, l.Country, l.Latitude, l.Longitude, " & _
+          Format(sAccurate, "'0.00'") & " AS Score_Accurate, " & _
+          Format(sAlmostAccurate, "'0.00'") & " AS Score_AlmostAccurate, " & _
+          Format(sNotAccurate, "'0.00'") & " AS Score_NotAccurate, " & _
+          Format(sAlmostOpposite, "'0.00'") & " AS Score_AlmostOpposite, " & _
+          Format(sOpposite, "'0.00'") & " AS Score_Opposite " & _
           "FROM tblSessions AS s LEFT JOIN tblLocations AS l ON s.LocationID = l.LocationID " & _
           "WHERE s.SessionID = " & sessionID_ToLoad
+          
           
     Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
     
@@ -286,7 +341,7 @@ Private Sub PopulateControlsFromRecordset(rs As DAO.Recordset)
     Me.txtCity = Nz(rs!City, "")
     Me.txtStateProv.value = Nz(UCase(rs!StateProvince), "")
     Me.cboCountry.value = rs!Country
-    Me.txtLatitude.value = Nz(rs!latitude, 0)
+    Me.txtLatitude.value = Nz(rs!Latitude, 0)
     Me.txtLongitude.value = Nz(rs!longitude, 0)
     
     Me.chkUseBirthLocation.value = Nz(rs!UsedBirthLocation, False)
@@ -306,7 +361,7 @@ Private Sub CalculateSessionAverageSuccess(SessionID As Long)
     On Error GoTo Err_CalcAvg
     
     Dim db As DAO.Database
-    Dim rst As DAO.Recordset  ' <-- FIXED: Correct type declaration
+    Dim rst As DAO.Recordset
     Dim sql As String
     
     Set db = CurrentDb()
@@ -356,6 +411,8 @@ End Sub
 Private Sub ClearSessionDetails()
     m_CurrentSessionID = 0
     m_CurrentSessionNumber = 0
+    m_TargetShape = ""
+    
     Me.txtSessionID.value = Null
     Me.txtSessionNum.value = Null
     Me.txtSessionDate.value = Null
@@ -376,7 +433,7 @@ Private Sub ClearSessionDetails()
     Me.chkUseBirthLocation.value = False
     SetLocationControlsLocked False
     
-     ApplySuccessColorCoding
+    ApplySuccessColorCoding
 End Sub
 
 Private Sub SetLocationControlsLocked(IsLocked As Boolean)
@@ -447,6 +504,8 @@ Err_HandleLoc:
 End Sub
 
 Private Sub SetupForViewer(ByVal PersonID As Long)
+    On Error GoTo Err_SetViewer
+    
     m_PersonID = PersonID
     Me.txtViewerName.value = DLookup("FirstName & ', ' & LastName", "tblPeople", "PersonID = " & m_PersonID)
     Me.cboSelectViewer.Enabled = False
@@ -454,7 +513,17 @@ Private Sub SetupForViewer(ByVal PersonID As Long)
     Me.txtViewerName.Enabled = True
     
     Dim sql As String
-    sql = "SELECT E.EventID, E.EventName & ' (' & Format(E.EventDate, 'yyyy-mm-dd') & ')' AS EventDisplay FROM tblEvents AS E INNER JOIN tblAssignments AS A ON E.EventID = A.EventID WHERE A.PersonID = " & m_PersonID & " ORDER BY E.EventDate DESC;"
+    
+If m_PersonID > 0 And m_EventID > 0 Then
+    sql = "SELECT E.EventID, E.EventName & ' (' & Format(E.EventDate, 'yyyy-mm-dd') & ')' AS " & _
+    "EventDisplay FROM tblEvents AS E INNER JOIN tblAssignments AS A " & _
+    "ON E.EventID = A.EventID WHERE A.PersonID = " & m_PersonID & " AND A.EventID = " & m_EventID & ";"
+Else
+    sql = "SELECT E.EventID, E.EventName & ' (' & Format(E.EventDate, 'yyyy-mm-dd') & ')' AS " & _
+    "EventDisplay FROM tblEvents AS E INNER JOIN tblAssignments AS A " & _
+    "ON E.EventID = A.EventID WHERE A.PersonID = " & m_PersonID & " ORDER BY E.EventDate DESC;"
+End If
+
     Me.cboSelectEvent.RowSource = sql
     
     If Me.cboSelectEvent.ListCount = 0 Then
@@ -466,10 +535,19 @@ Private Sub SetupForViewer(ByVal PersonID As Long)
             Exit Sub
         End If
     End If
+
+Exit Sub
+
+Err_SetViewer:
+    MsgBox "Error setting viewer session: " & Err.Description
+
 End Sub
 
-Private Sub SetupForEvent(ByVal EventID As Long)
-    m_EventID = EventID
+Private Sub SetupForEvent(ByVal eventID As Long)
+    On Error GoTo Err_SetEvent
+    
+    m_EventID = eventID
+    
     Me.txtEventName.value = DLookup("EventName", "tblEvents", "EventID = " & m_EventID)
     Me.cboSelectEvent.Enabled = False
     Me.cboSelectEvent.Visible = False
@@ -491,6 +569,11 @@ Private Sub SetupForEvent(ByVal EventID As Long)
             Exit Sub
         End If
     End If
+    
+    Exit Sub
+    
+Err_SetEvent:
+    MsgBox "Error setting event session: " & Err.Description
 
 End Sub
 
@@ -581,7 +664,7 @@ Private Sub UpdateLocationCoordinatesInDB(ByVal strCity As String, ByVal strStat
         rs!City = strCity
         rs!StateProvince = IIf(strState = "", Null, strState)
         rs!Country = strCountry
-        rs!latitude = dblLat
+        rs!Latitude = dblLat
         rs!longitude = dblLng
         rs!DateCreated = Now()
         rs!DateUpdated = Now()
@@ -594,7 +677,7 @@ Private Sub UpdateLocationCoordinatesInDB(ByVal strCity As String, ByVal strStat
         
         If Not rs.EOF Then
             rs.Edit
-            rs!latitude = dblLat
+            rs!Latitude = dblLat
             rs!longitude = dblLng
             rs!DateUpdated = Now()
             rs.Update
@@ -780,7 +863,7 @@ Private Sub CopyStudentLocationToSession()
         Me.txtCity = Nz(rs!City, "")
         Me.txtStateProv = Nz(rs![StateProvince], "")
         Me.cboCountry = Nz(rs!Country, "")
-        Me.txtLatitude = Nz(rs!latitude, 0)
+        Me.txtLatitude = Nz(rs!Latitude, 0)
         Me.txtLongitude = Nz(rs!longitude, 0)
     Else
         MsgBox "Could not find location information for selected student", vbExclamation
@@ -817,10 +900,10 @@ Private Sub btnViewSessionChart_Click()
     End If
     
     ' Find the ChartID for this session
-    Dim chartID As Long
-    chartID = GetSessionChartID(SessionID)
+    Dim ChartID As Long
+    ChartID = GetSessionChartID(SessionID)
     
-    If chartID <= 0 Then
+    If ChartID <= 0 Then
         ' No chart found - offer to generate one
         Dim response As VbMsgBoxResult
         response = MsgBox("No chart found for this session." & vbCrLf & _
@@ -832,10 +915,10 @@ Private Sub btnViewSessionChart_Click()
             Call btnGenerateChart_Click
             
             ' Try to get ChartID again after generation
-            chartID = GetSessionChartID(SessionID)
+            ChartID = GetSessionChartID(SessionID)
             
-            If chartID <= 0 Then
-                MsgBox "Chart generation failed. Unable to display chart.", vbCritical, "Chart Generation Error"
+            If ChartID <= 0 Then
+                MsgBox "Save this session before generating the chart.", vbCritical, "Chart Generation Error"
                 Exit Sub
             End If
         Else
@@ -844,13 +927,13 @@ Private Sub btnViewSessionChart_Click()
     End If
     
     ' Open frmAspectGrid with the ChartID
-    Debug.Print "About to open frmAspectGrid with ChartID: " & chartID
+    Debug.Print "About to open frmAspectGrid with ChartID: " & ChartID
     
     ' Make sure ChartID is valid before passing
-    If chartID > 0 Then
-        DoCmd.OpenForm "frmAspectHalfGrid", acNormal, , , , , chartID
+    If ChartID > 0 Then
+        DoCmd.OpenForm "frmAspectHalfGrid", acNormal, , , , , ChartID
     Else
-        MsgBox "Invalid ChartID (" & chartID & "). Cannot open chart display.", vbCritical, "Invalid Chart"
+        MsgBox "Invalid ChartID (" & ChartID & "). Cannot open chart display.", vbCritical, "Invalid Chart"
     End If
     
     Exit Sub
@@ -920,7 +1003,7 @@ Private Function GetSessionChartID(SessionID As Long) As Long
     Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
     
     If Not rs.EOF Then
-        GetSessionChartID = rs!chartID
+        GetSessionChartID = rs!ChartID
     Else
         GetSessionChartID = 0
     End If
@@ -949,7 +1032,15 @@ Private Sub btnAddEditImpressions_Click()
         Exit Sub
     End If
     
-    DoCmd.OpenForm "frmImpressions", , , , , , CStr(m_CurrentSessionID)
+    If Nz(Me.cboTargetShape.value, "") = "" Then
+        MsgBox "Please set the Target Shape first before adding impressions.", vbInformation
+        Exit Sub
+    End If
+    
+    Dim args As String
+    args = CStr(m_CurrentSessionID) & "|" & Me.cboTargetShape.value
+    
+    DoCmd.OpenForm "frmImpressions", , , , , , args
     
 End Sub
 
@@ -1073,7 +1164,7 @@ Private Function SaveSessionRecord() As Boolean
         rsSession.Edit
                   
           rsSession!PersonID = m_PersonID
-          rsSession!EventID = m_EventID
+          rsSession!eventID = m_EventID
           rsSession!sessionDate = Me.txtSessionDate
           rsSession!SessionStartTime = Me.txtStartTime
           rsSession!SessionEndTime = Me.txtEndTime
@@ -1098,7 +1189,7 @@ Private Function SaveSessionRecord() As Boolean
 
         rsSession.AddNew
           rsSession!PersonID = m_PersonID
-          rsSession!EventID = m_EventID
+          rsSession!eventID = m_EventID
           rsSession!sessionDate = Me.txtSessionDate
           rsSession!SessionStartTime = Me.txtStartTime
           rsSession!SessionEndTime = Me.txtEndTime
@@ -1195,7 +1286,7 @@ Private Function GetOrCreateSessionLocation(City As String, state As String, Cou
             !City = City
             If state <> "" Then ![StateProvince] = state
             !Country = Country
-            !latitude = lat
+            !Latitude = lat
             !longitude = lng
             !DateCreated = Now()
             !DateUpdated = Now()
@@ -1300,21 +1391,21 @@ End Sub
 
 Private Sub UpdateFormButtons()
     ' Update button enabled state based on form state
-    If Me.NewRecord Then
-        Me.btnViewSessionChart.Enabled = False
-        Me.btnAddEditImpressions.Enabled = False
-        Me.btnDeleteSession.Enabled = False
-        Me.chkSessionChartGenerated = False
-    Else
-        ' Check if session chart exists
-        Dim hasChart As Boolean
-'        hasChart = (modChartCalculation.GetChartID("Session", , , Me.txtSessionID) > 0)
-        
-        Me.chkSessionChartGenerated = hasChart
-        Me.btnViewSessionChart.Enabled = hasChart
-        Me.btnAddEditImpressions.Enabled = True
-        Me.btnDeleteSession.Enabled = True
-    End If
+'    If Me.NewRecord Then
+'        Me.btnViewSessionChart.Enabled = False
+'        Me.btnAddEditImpressions.Enabled = False
+'        Me.btnDeleteSession.Enabled = False
+'        Me.chkSessionChartGenerated = False
+'    Else
+'        ' Check if session chart exists
+'        Dim hasChart As Boolean
+''        hasChart = (modChartCalculation.GetChartID("Session", , , Me.txtSessionID) > 0)
+'
+'        Me.chkSessionChartGenerated = hasChart
+'        Me.btnViewSessionChart.Enabled = hasChart
+'        Me.btnAddEditImpressions.Enabled = True
+'        Me.btnDeleteSession.Enabled = True
+'    End If
 End Sub
 
 ' Event handlers for combo box changes
@@ -1399,8 +1490,8 @@ Private Sub btnGenerateChart_Click()
 UpdateChartControls
 
     Else
-        MsgBox "Failed to generate session chart. Check debug output for details.", vbCritical, "Chart Generation Failed"
-        Debug.Print "Session chart generation failed"
+        MsgBox "Save this session before generating session chart.", vbCritical, "Chart Generation Failed"
+        Debug.Print "Session chart generation failed. User must save the session first."
     End If
     
 Cleanup:
@@ -1525,7 +1616,7 @@ Private Function CreateNewSessionRecord() As Long
     rs.AddNew
     With rs
         !PersonID = GetPersonIDFromViewer()
-        !EventID = GetEventIDFromEvent()
+        !eventID = GetEventIDFromEvent()
         !sessionDate = Me.txtSessionDate
         !SessionStartTime = Me.txtStartTime
         !SessionEndTime = Nz(Me.txtEndTime, Null)
@@ -1602,7 +1693,7 @@ Private Function GetOrCreateLocationID() As Long
             !City = Nz(Me.txtCity, "Unknown")
             ![State/Province] = Nz(Me.txtStateProv, "")
             !Country = Nz(Me.cboCountry, "Unknown")
-            !latitude = Me.txtLatitude
+            !Latitude = Me.txtLatitude
             !longitude = Me.txtLongitude
             !DateCreated = Now()
         End With
@@ -1686,7 +1777,7 @@ ErrorHandler:
     Set db = Nothing
 End Function
 
-Private Function FindSessionID(PersonID As Long, EventID As Long) As Long
+Private Function FindSessionID(PersonID As Long, eventID As Long) As Long
     On Error GoTo ErrorHandler
     
     Dim db As DAO.Database
@@ -1694,7 +1785,7 @@ Private Function FindSessionID(PersonID As Long, EventID As Long) As Long
     Dim sql As String
     
     Set db = CurrentDb()
-    sql = "SELECT SessionID FROM tblSessions WHERE PersonID = " & PersonID & " AND EventID = " & EventID
+    sql = "SELECT SessionID FROM tblSessions WHERE PersonID = " & PersonID & " AND EventID = " & eventID
     Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
     
     If Not rs.EOF Then
@@ -1721,23 +1812,23 @@ Private Sub LoadToleranceRules()
     Dim db As DAO.Database
     Dim rs As DAO.Recordset
     Dim i As Integer
-    
+
     On Error GoTo ErrorHandler
-    
+
     Set db = CurrentDb()
     Set rs = db.OpenRecordset("SELECT ToleranceScore, ToleranceColor FROM tblTolerances ORDER BY ToleranceScore DESC")
-    
+
     If rs.EOF Then
         m_ToleranceCount = 0
         Exit Sub
     End If
-    
+
     ' Count records and resize array
     rs.MoveLast
     m_ToleranceCount = rs.recordCount
     ReDim m_Tolerances(0 To m_ToleranceCount - 1)
     rs.MoveFirst
-    
+
     ' Load data into array
     i = 0
     Do While Not rs.EOF
@@ -1747,12 +1838,12 @@ Private Sub LoadToleranceRules()
         i = i + 1
         rs.MoveNext
     Loop
-    
+
     rs.Close
     Set rs = Nothing
     Set db = Nothing
     Exit Sub
-    
+
 ErrorHandler:
     m_ToleranceCount = 0
     If Not rs Is Nothing Then
@@ -1775,7 +1866,7 @@ End Function
 
 Private Function GetColorForScore(score As Double) As Long
     Dim i As Integer
-    
+
     ' Loop through tolerance rules (sorted by score DESC)
     For i = 0 To m_ToleranceCount - 1
         If score >= m_Tolerances(i).score Then
@@ -1783,14 +1874,14 @@ Private Function GetColorForScore(score As Double) As Long
             Exit Function
         End If
     Next i
-    
+
     ' If no match found, return white
     GetColorForScore = RGB(255, 255, 255)
 End Function
 
 Private Sub ApplySuccessColorCoding()
     On Error Resume Next
-    
+
     ' Check if txtAvgSuccess has a valid numeric value
     If Not IsNull(Me.txtAvgSuccess) And _
        Me.txtAvgSuccess.value <> "" And _
@@ -1802,13 +1893,16 @@ Private Sub ApplySuccessColorCoding()
         ' No value or invalid value - use default white background
         Me.txtAvgSuccess.backColor = RGB(255, 255, 255)
     End If
-    
+
     On Error GoTo 0
 End Sub
 
 Private Sub Form_Activate()
     ' This fires when the form gets focus (like returning from Impressions form)
     ' Recalculate the average success and apply color coding
+    
+    LoadFirstSession
+
     If m_CurrentSessionID > 0 Then
         CalculateSessionAverageSuccess m_CurrentSessionID
     End If

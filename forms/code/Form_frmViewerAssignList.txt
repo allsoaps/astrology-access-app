@@ -139,6 +139,12 @@ Private Sub btnSave_Click()
     ' Commit the transaction
     ws.CommitTrans
     
+    ' Unbind the form from the temporary table first
+    Me.RecordSource = ""
+    
+    ' Now delete the temporary table
+    CleanupTempTable
+    
     ' Show success message and close
     MsgBox assignmentCount & " viewer(s) assigned successfully.", vbInformation, "Save Complete"
     DoCmd.Close acForm, Me.name
@@ -161,6 +167,12 @@ ErrorHandler:
 End Sub
 
 Private Sub btnCancel_Click()
+    ' Unbind the form from the temporary table first
+    Me.RecordSource = ""
+    
+    ' Now delete the temporary table
+    CleanupTempTable
+    
     DoCmd.Close acForm, Me.name
 End Sub
 
@@ -243,7 +255,6 @@ Private Sub CleanupTempTable()
     ' Unbind the form from the temporary table first
     Me.RecordSource = ""
     
-    
     ' Check if table exists before trying to drop it
     Dim tableExists As Boolean
     tableExists = False
@@ -258,15 +269,15 @@ Private Sub CleanupTempTable()
     
     ' Only try to drop if it exists
     If tableExists Then
-        db.Execute "DROP TABLE " & TEMP_TABLE_NAME & ";"
+        db.Execute "DROP TABLE [" & TEMP_TABLE_NAME & "];", dbFailOnError
     End If
     
     Set db = Nothing
+    
     Exit Sub
     
 ErrorHandler:
     ' Log the actual error instead of hiding it
-    Debug.Print "Error deleting temporary table " & TEMP_TABLE_NAME & ": " & Err.Description
     Set db = Nothing
 End Sub
 

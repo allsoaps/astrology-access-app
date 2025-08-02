@@ -95,8 +95,8 @@ Private Declare PtrSafe Function swe_calc Lib "swedll64.dll" _
 '=======================================
 
 ' Also add this public function to get the Swiss Ephemeris constants
-Public Function GetSwissEphConstant(planetName As String) As Long
-    Select Case UCase(planetName)
+Public Function GetSwissEphConstant(PlanetName As String) As Long
+    Select Case UCase(PlanetName)
         Case "SUN": GetSwissEphConstant = SE_SUN
         Case "MOON": GetSwissEphConstant = SE_MOON
         Case "MERCURY": GetSwissEphConstant = SE_MERCURY
@@ -206,9 +206,7 @@ Public Function InitSwissEph() As Boolean
     m_IsInitialized = False
 
 
-Call swe_close
-Call SafeSetEphePath(m_EphePath)
-
+    Call swe_close
 
     ' Load paths from database or defaults
     If Not LoadPathsFromDatabase() Then
@@ -277,30 +275,13 @@ Private Function LoadPathsFromDatabase() As Boolean
     Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
     
     If Not rs.EOF Then
-        ' If no paths are set, use defaults relative to the database location
-'        If m_EphePath = "" Then
-'            m_EphePath = GetDefaultEphePath()
-'        End If
-        If m_DLLPath = "" Then
-            m_DLLPath = GetDefaultDLLPath()
-        End If
-        
-        
-        Debug.Print "Swiss EPHE path in LoadPathsFromDatabase: " & m_EphePath
-        Debug.Print "Swiss DLL path in LoadPathsFromDatabase: " & m_DLLPath
-        
-        
-        
-m_EphePath = Nz(rs!EphePath, "")
-If Trim$(m_EphePath) = "" Then m_EphePath = GetDefaultEphePath()
+       
+       ' If no paths are set, use defaults relative to the database location
+        m_EphePath = Nz(rs!EphePath, "")
+        If Trim$(m_EphePath) = "" Then m_EphePath = GetDefaultEphePath()
         
         m_DLLPath = Nz(rs!DLLPath, "")
-        
-        
-
-        
-        Debug.Print "Swiss EPHE path in LoadPathsFromDatabase: " & m_EphePath
-        Debug.Print "Swiss DLL path in LoadPathsFromDatabase: " & m_DLLPath
+        If Trim$(m_DLLPath) = "" Then m_DLLPath = GetDefaultDLLPath()
         
         LoadPathsFromDatabase = True
     Else
@@ -335,7 +316,6 @@ Private Function GetDefaultEphePath() As String
     ' Default to Resources\ephe subdirectory relative to database
     Dim dbPath As String
     dbPath = CurrentProject.path
-    Debug.Print 'Get Default EPHE Path - CURRENTPROJECT dbPath value: " & dbPath
 
     GetDefaultEphePath = dbPath & "\Resources\ephe"
 End Function
@@ -344,7 +324,6 @@ Private Function GetDefaultDLLPath() As String
     ' Default to Resources subdirectory relative to database
     Dim dbPath As String
     dbPath = CurrentProject.path
-    Debug.Print 'Get Default DLL Path - CURRENTPROJECT dbPath value: " & dbPath
     
     GetDefaultDLLPath = dbPath & "\Resources\sweph\bin"
 End Function
@@ -396,9 +375,6 @@ Private Sub CreateDefaultSettings()
     sql = "INSERT INTO tblSwissEphSettings (SettingID, EphePath, DLLPath, DefaultHouseSystem, DefaultOrbs, IncludeAsteroids, UseTopocentric, UseTrue) " & _
           "VALUES (1, '" & GetDefaultEphePath() & "', '" & GetDefaultDLLPath() & "', 1, True, False, False, True)"
     
-Debug.Print "sql from CreateDefaultSettings:  " & sql
-
-    
     db.Execute sql
     
     Set db = Nothing
@@ -434,7 +410,6 @@ Public Function GetPlanetPosition(planetID As Long, dateTime As Date) As Double
     Dim CoordinateSystem As String
     
     ' Initialize error string
-    'serr = vbNullString
     serr = String(255, vbNullChar)
 
     
@@ -479,8 +454,7 @@ ErrorHandler:
 End Function
 
 
-
-Public Function GetHouseCusps(julianDay As Double, latitude As Double, longitude As Double) As Variant
+Public Function GetHouseCusps(julianDay As Double, Latitude As Double, longitude As Double) As Variant
     On Error GoTo ErrorHandler
     
     ' Ensure Swiss Ephemeris is initialized
@@ -498,7 +472,7 @@ Public Function GetHouseCusps(julianDay As Double, latitude As Double, longitude
     Dim resultArray(12) As Double ' Return array for cusps 1-12
     
     ' Calculate houses using Placidus system (P)
-    result = swe_houses(julianDay, latitude, longitude, Asc("P"), cusps(0), ascmc(0))
+    result = swe_houses(julianDay, Latitude, longitude, Asc("P"), cusps(0), ascmc(0))
     
     If result >= 0 Then
         ' Copy cusps 1-12 to result array
@@ -522,7 +496,7 @@ ErrorHandler:
     GetHouseCusps = Array()
 End Function
 
-Public Function GetAscendantMidheaven(julianDay As Double, latitude As Double, longitude As Double) As Variant
+Public Function GetAscendantMidheaven(julianDay As Double, Latitude As Double, longitude As Double) As Variant
     On Error GoTo ErrorHandler
     
     ' Ensure Swiss Ephemeris is initialized
@@ -538,7 +512,7 @@ Public Function GetAscendantMidheaven(julianDay As Double, latitude As Double, l
     Dim result As Long
     
     ' Calculate houses to get Ascendant and Midheaven
-    result = swe_houses(julianDay, latitude, longitude, Asc("P"), cusps(0), ascmc(0))
+    result = swe_houses(julianDay, Latitude, longitude, Asc("P"), cusps(0), ascmc(0))
     
     If result >= 0 Then
         ' ascmc(0) = Ascendant, ascmc(1) = Midheaven
@@ -583,29 +557,6 @@ Public Property Get DLLPath() As String
     DLLPath = m_DLLPath
 End Property
 
-' === Safe function to set the ephemeris path ===
-'Public Function SafeSetEphePath(EphePath As String, Optional showMsg As Boolean = True) As Boolean
-'    On Error GoTo Fail
-'
-'    If Dir(EphePath, vbDirectory) = "" Then
-'        If showMsg Then MsgBox "Invalid Ephemeris Path: " & EphePath, vbCritical
-'        SafeSetEphePath = False
-'        Exit Function
-'    End If
-'
-'Debug.Print "Calling swe_set_ephe_path with: " & EphePath
-'
-'    swe_set_ephe_path EphePath
-'
-'
-'
-'    SafeSetEphePath = True
-'    Exit Function
-'
-'Fail:
-'    If showMsg Then MsgBox "Error calling swe_set_ephe_path: " & Err.Description, vbCritical
-'    SafeSetEphePath = False
-'End Function
 
 ' === Safe wrapper for swe_calc_ut ===
 Public Function SafeCalcUT(jd As Double, planet As Long, flags As Long, ByRef lonOut As Double, Optional showMsg As Boolean = True) As Boolean
@@ -618,24 +569,15 @@ Public Function SafeCalcUT(jd As Double, planet As Long, flags As Long, ByRef lo
 
     ' Initialize the error string buffer - THIS WAS MISSING
     serr = String(255, vbNullChar)
-Debug.Print "**serr  before swe_calc_ut: " & serr & "***"
 
-
-'m_EphePath = Nz(rs!EphePath, "")
-If Trim$(m_EphePath) = "" Then m_EphePath = GetDefaultEphePath()
+    If Trim$(m_EphePath) = "" Then m_EphePath = GetDefaultEphePath()
 
     result = swe_calc_ut(jd, planet, flags, xx(0), serr)
-
-Debug.Print "**result  from SafeCalcUT: " & result
-
 
     If result < 0 Then
         If showMsg Then MsgBox "Swiss Ephemeris Error: " & Trim$(serr), vbExclamation
         SafeCalcUT = False
     Else
-    
-        Debug.Print "SafeCalcUT serr value: " & Trim$(serr)
-        
         lonOut = xx(0)
         SafeCalcUT = True
     End If
@@ -693,8 +635,6 @@ ErrorHandler:
 #End If
 End Function
 
-'#######
-' Add this function to your modSwissItems module
 ' Returns complete planetary data: longitude, latitude, distance, speeds
 Public Function GetCompletePlanetData(julianDay As Double, planetID As Long) As Variant
     On Error GoTo ErrorHandler
@@ -735,8 +675,6 @@ Public Function GetCompletePlanetData(julianDay As Double, planetID As Long) As 
         
     On Error Resume Next
     
-    Debug.Print "Planet " & planetID & " calculated successfully. Lon=" & Format(xx(0), "0.00") & "°"
-
     On Error GoTo ErrorHandler
     
     End If
@@ -747,8 +685,6 @@ ErrorHandler:
     Debug.Print "Error in GetCompletePlanetData: " & Err.Description
     GetCompletePlanetData = Array(-999, -999, -999, -999, -999, -999)
 End Function
-
-
 
 ' === Safe wrapper for swe_set_ephe_path ===
 Public Function SafeSetEphePath(EphePath As String, Optional showMsg As Boolean = True) As Boolean

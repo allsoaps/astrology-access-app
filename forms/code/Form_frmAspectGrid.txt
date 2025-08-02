@@ -17,6 +17,7 @@ Option Explicit
 
 ' Form-level variables
 Private m_ChartID As Long
+Private m_CurrentChartID As Long
 Private m_ChartType As String
 Private m_CurrentChartType As String
 Private m_ChartTitle As String
@@ -26,6 +27,20 @@ Private m_EventID As Long
 Private m_SessionID As Long
 
 
+Private Sub btnAstralBodies_Click()
+    Dim openArgs As String
+    
+    openArgs = m_ChartID
+    
+    DoCmd.OpenForm "frmDeclinationPopup", acNormal, , , , , openArgs
+    DoCmd.Close acForm, Me.name
+
+End Sub
+
+Private Sub cmdClose_Click()
+    DoCmd.Close acForm, "frmAspectGridTabs"
+End Sub
+
 ' =================================================================
 ' FORM EVENTS
 ' =================================================================
@@ -33,56 +48,29 @@ Private m_SessionID As Long
 Private Sub Form_Load()
     On Error GoTo ErrorHandler
     
-     ' Parse OpenArgs to get EventID and EventName
-    
-If Not IsNull(Me.openArgs) And InStr(Me.openArgs, "|") > 0 Then
-    Dim args() As String
-    args = Split(Me.openArgs, "|")
-    Dim PersonID As Long: PersonID = CLng(args(0))
-    Dim eventID As Long: eventID = CLng(args(1))
-    Dim SessionID As Long: SessionID = CLng(args(2))
-    Dim transitType As String: transitType = args(3)
-    
-    m_ChartType = transitType
-    m_ChartTitle = "Transit Chart - " & transitType
-    m_EventID = eventID
-    m_PersonID = PersonID
-    m_SessionID = SessionID
 
-    FormatGridHeaders
-    FormatGridCells
-    PopulateGridHeaders
-        
-    Call PopulateTransitGridWithColor(PersonID, eventID, SessionID, transitType)
+    ' Use the global context
+    If gPersonID > 0 And gEventID > 0 And gSessionID > 0 And Len(gTransitType) > 0 Then
     
+        m_ChartType = gTransitType
+        m_ChartTitle = "Transit Chart - " & gTransitType
+        m_EventID = gEventID
+        m_PersonID = gPersonID
+        m_SessionID = gSessionID
     
-    Me.Caption = "Transit Chart: Viewer vs Session"
+        FormatGridHeaders
+        FormatGridCells
+        PopulateGridHeaders
+
+        Call PopulateTransitGridWithColor(gPersonID, gEventID, gSessionID, gTransitType)
+        Me.Caption = "Transit Chart: " & gTransitType
     Exit Sub
 End If
-    
-    
-    
-    ' Set up dropdown
-    With Me.cboChartType
-        .RowSourceType = "Value List"
-        .RowSource = GetChartTypeOptions()
-        .ColumnCount = 1
-        .BoundColumn = 1
-        .LimitToList = True
-    End With
-    
-    ' Parse OpenArgs
-'    ParseOpenArgs
-
-
-
-
-    
-    
-    
     ' Load initial chart
     LoadSelectedChart
     
+    RefreshTransitChart
+
     'm_FormLoading = False
     Exit Sub
     
@@ -92,14 +80,23 @@ ErrorHandler:
     DoCmd.Close acForm, Me.name
 End Sub
 
+Public Sub RefreshTransitChart()
+    ' You can adjust which labels/headers you want to reset here if needed
+'    FormatGridHeaders
+'    FormatGridCells
+'    PopulateGridHeaders
+    If gPersonID > 0 And gEventID > 0 And gSessionID > 0 And Len(gTransitType) > 0 Then
+        Call PopulateTransitGridWithColor(gPersonID, gEventID, gSessionID, gTransitType)
+        Me.Caption = "Transit Chart: " & gTransitType
+    End If
+End Sub
+
 
 ' =================================================================
 ' CHART DATA LOADING
 ' =================================================================
 Private Sub LoadChartData()
     On Error GoTo ErrorHandler
-    
-    Debug.Print "Loading chart data for ChartID: " & m_ChartID
     
     ' Load chart metadata
     LoadChartMetadata
@@ -137,18 +134,52 @@ Private Sub LoadChartMetadata()
     ' Get chart information
     
    
-    sql = "SELECT s.*, p.FirstName, p.LastName, e.EventName, l.* " & _
-          "FROM ((tblSessions s " & _
+    sql = "SELECT s.*, p.FirstName, p.LastName, e.EventName, e.EventDate, e.EventTime, c.ChartID, l.* " & _
+          "FROM (((tblSessions s " & _
           "LEFT JOIN tblPeople p ON s.PersonID = p.PersonID) " & _
           "LEFT JOIN tblEvents e ON s.EventID = e.EventID) " & _
+          "LEFT JOIN tblCharts c ON s.SessionID = c.SessionID) " & _
           "LEFT JOIN tblLocations l ON s.LocationID = l.LocationID " & _
-          "WHERE s.SessionID = " & m_SessionID
+          "WHERE s.SessionID = " & m_SessionID      'bc i only pull session i get the same chart. sometimes i should pull by CHARTID??? 3 do session, 2 use event, 1 uses V-natal
     
 
     
     Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
     
-    If Not rs.EOF Then
+        ' Build Event Info: "Event Date | Event Time | Event Name"
+        Dim eventInfo As String
+        Dim eventDate As String
+        Dim eventTime As String
+        Dim eventName As String
+        
+        ' Format event date
+        If Not IsNull(rs!eventDate) Then
+            eventDate = Format(rs!eventDate, "mm/dd/yyyy")
+        Else
+            eventDate = "Unknown Date"
+        End If
+        
+        ' Format event time
+        If Not IsNull(rs!eventTime) Then
+            eventTime = Format(rs!eventTime, "hh:nn AM/PM")
+        Else
+            eventTime = "Unknown Time"
+        End If
+        
+        ' Get event name or use default
+        If Not IsNull(rs!eventName) And Len(Trim(rs!eventName)) > 0 Then
+            eventName = Trim(rs!eventName)
+        Else
+            eventName = "<no name>"
+        End If
+        
+        ' Combine all parts with " | " separator
+        eventInfo = eventDate & " | " & eventTime & " | " & eventName
+        Me.lblHeaderLine2.Caption = "Event: " & eventInfo
+
+m_ChartType = gTransitType
+        
+        If Not rs.EOF Then
         ' Build chart title based on chart type
         Select Case m_ChartType
             Case "Viewer_Session"
@@ -160,7 +191,12 @@ Private Sub LoadChartMetadata()
                 Me.lblLocation.Caption = "Session Location: " & rs!City & ", " & rs!StateProvince & ", " & rs!Country
                 Me.lblHeaderLine1.Caption = "Viewer: " & rs!FirstName & " " & rs!LastName
                 Me.lblTransitTypeName.Caption = "Viewer: " & rs!FirstName & " " & rs!LastName
-                
+     
+                m_ChartID = rs!ChartID
+                Me.txtChartID = m_ChartID
+     
+    Me.Requery
+     
             Case "Viewer_Event"
                 m_ChartTitle = "Transit Chart: Viewer -> Event "
             
@@ -171,11 +207,74 @@ Private Sub LoadChartMetadata()
                 Me.lblHeaderLine1.Caption = "Viewer: " & rs!FirstName & " " & rs!LastName
                 Me.lblTransitTypeName.Caption = "Viewer: " & rs!FirstName & " " & rs!LastName
                 
+                m_ChartID = rs!ChartID
+                Me.txtChartID = m_ChartID
+    Me.Requery
+     
+               
             Case "Reference_Event"
-            Case "Reference_Session"
-            Case "Reference_Viewer"
-            Case "Session_Event"
+                m_ChartTitle = "Transit Chart: John -> Event "
             
+                ' Update labels on form
+                Me.lblChartTitle.Caption = m_ChartTitle
+                Me.lblChartDate.Caption = "Event Date/Time: " & Format(rs!eventDate, "dddd, mmmm d, yyyy") & " at " & Format(rs!eventTime, "h:nn AM/PM")
+                Me.lblLocation.Caption = "Event Location: " & rs!City & ", " & rs!StateProvince & ", " & rs!Country
+                Me.lblHeaderLine1.Caption = "Viewer: " & rs!FirstName & " " & rs!LastName
+                Me.lblTransitTypeName.Caption = "Viewer: " & rs!FirstName & " " & rs!LastName
+                
+                m_ChartID = rs!ChartID
+                Me.txtChartID = m_ChartID
+    Me.Requery
+     
+               
+            Case "Reference_Session"
+                m_ChartTitle = "Transit Chart: John -> Session "
+            
+                ' Update labels on form
+                Me.lblChartTitle.Caption = m_ChartTitle
+                Me.lblChartDate.Caption = "Event Date/Time: " & Format(rs!eventDate, "dddd, mmmm d, yyyy") & " at " & Format(rs!eventTime, "h:nn AM/PM")
+                Me.lblLocation.Caption = "Event Location: " & rs!City & ", " & rs!StateProvince & ", " & rs!Country
+                Me.lblHeaderLine1.Caption = "Viewer: " & rs!FirstName & " " & rs!LastName
+                Me.lblTransitTypeName.Caption = "Viewer: " & rs!FirstName & " " & rs!LastName
+                
+                m_ChartID = rs!ChartID
+                 Me.txtChartID = m_ChartID
+   Me.Requery
+     
+               
+                
+            Case "Reference_Viewer"
+                m_ChartTitle = "Transit Chart: John -> Viewer "
+            
+                ' Update labels on form
+                Me.lblChartTitle.Caption = m_ChartTitle
+                Me.lblChartDate.Caption = "Event Date/Time: " & Format(rs!eventDate, "dddd, mmmm d, yyyy") & " at " & Format(rs!eventTime, "h:nn AM/PM")
+                Me.lblLocation.Caption = "Event Location: " & rs!City & ", " & rs!StateProvince & ", " & rs!Country
+                Me.lblHeaderLine1.Caption = "Viewer: " & rs!FirstName & " " & rs!LastName
+                Me.lblTransitTypeName.Caption = "Viewer: " & rs!FirstName & " " & rs!LastName
+                
+                m_ChartID = rs!ChartID
+                  Me.txtChartID = m_ChartID
+   Me.Requery
+     
+              
+                
+            Case "Event_Session"
+                m_ChartTitle = "Transit Chart: Event -> Session "
+            
+                ' Update labels on form
+                Me.lblChartTitle.Caption = m_ChartTitle
+                Me.lblChartDate.Caption = "Event Date/Time: " & Format(rs!eventDate, "dddd, mmmm d, yyyy") & " at " & Format(rs!eventTime, "h:nn AM/PM")
+                Me.lblLocation.Caption = "Event Location: " & rs!City & ", " & rs!StateProvince & ", " & rs!Country
+                Me.lblHeaderLine1.Caption = "Viewer: " & rs!FirstName & " " & rs!LastName
+                Me.lblTransitTypeName.Caption = "Viewer: " & rs!FirstName & " " & rs!LastName
+                 
+                m_ChartID = rs!ChartID
+                 Me.txtChartID = m_ChartID
+   Me.Requery
+     
+               
+               
             Case Else
                 m_ChartTitle = m_ChartType & " Chart - " & Format(rs!ChartDate, "mm/dd/yyyy")
         End Select
@@ -184,6 +283,8 @@ Private Sub LoadChartMetadata()
         m_ChartTitle = "Chart Not Found"
         Me.lblChartTitle.Caption = "Chart ID " & m_ChartID & " not found"
     End If
+    
+    Me.Requery
     
     rs.Close
     Set db = Nothing
@@ -246,8 +347,6 @@ Private Sub PopulateGridHeaders()
         ' Populate vertical header
         Me.Controls("sidebar_" & i).Caption = Nz(rs!symbol, Left(rs!BodyName, 2))
         
-        Debug.Print "Header " & i & ": " & rs!BodyName & " (" & Nz(rs!symbol, "No Symbol") & ")"
-        
         rs.MoveNext
         i = i + 1
     Loop
@@ -261,8 +360,6 @@ Private Sub PopulateGridHeaders()
     
     rs.Close
     Set db = Nothing
-    
-    Debug.Print "Grid headers populated successfully"
     
     Exit Sub
     
@@ -305,7 +402,6 @@ Private Sub PopulateAspectGrid()
     pos = 1
     Do While Not rsBodyMap.EOF And pos <= 18
         bodyPositions.Add pos, CStr(rsBodyMap!BodyID)
-        Debug.Print "Body mapping: BodyID " & rsBodyMap!BodyID & " -> Position " & pos
         rsBodyMap.MoveNext
         pos = pos + 1
     Loop
@@ -363,9 +459,6 @@ Private Sub PopulateAspectGrid()
             Me.Controls("cell_" & body2Pos & "_" & body1Pos).value = aspectText
             Me.Controls("cell_" & body2Pos & "_" & body1Pos).backColor = cellColor
             
-            Debug.Print "Aspect: Body " & rs!body1ID & " (pos " & body1Pos & ") " & _
-                       rs!aspectSymbol & " Body " & rs!body2ID & " (pos " & body2Pos & ") = " & aspectText & _
-                       " (" & Nz(rs!aspectType, "Unknown") & ")"
         End If
         
         rs.MoveNext
@@ -373,8 +466,6 @@ Private Sub PopulateAspectGrid()
     
     rs.Close
     Set db = Nothing
-    
-    Debug.Print "Aspect grid populated successfully with color coding"
     
     Exit Sub
     
@@ -425,8 +516,6 @@ Private Sub FormatGridCells()
         Next j
     Next i
     
-    Debug.Print "Grid cells formatted successfully"
-    
     Exit Sub
     
 ErrorHandler:
@@ -473,8 +562,6 @@ Private Sub FormatGridHeaders()
         End With
     Next i
     
-    Debug.Print "Grid headers formatted successfully"
-    
     Exit Sub
     
 ErrorHandler:
@@ -518,7 +605,6 @@ Private Sub ParseOpenArgs()
                     m_SessionID = CLng(keyValue(1))
                 Case "ChartType"
                     m_CurrentChartType = keyValue(1)
-                    Me.cboChartType = keyValue(1)
             End Select
         End If
     Next i
@@ -760,7 +846,6 @@ Private Sub PopulateTransitGridWithColor(PersonID As Long, eventID As Long, Sess
 
     rs.Close
     Set db = Nothing
-    Debug.Print "Transit grid populated with color and orb/symbol formatting."
     Exit Sub
 
 ErrorHandler:

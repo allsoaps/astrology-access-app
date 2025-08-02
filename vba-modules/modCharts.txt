@@ -253,11 +253,11 @@ End Sub
 '=======================================
 ' Populate & display for a given ChartID
 '=======================================
-Public Sub ShowChartAspectGrid(chartID As Long)
-    PopulateAspectGrid chartID
+Public Sub ShowChartAspectGrid(ChartID As Long)
+    PopulateAspectGrid ChartID
 End Sub
 
-Public Sub PopulateAspectGrid(chartID As Long)
+Public Sub PopulateAspectGrid(ChartID As Long)
     Dim db    As DAO.Database
     Dim rs    As DAO.Recordset
     Dim rso   As DAO.Recordset
@@ -301,7 +301,7 @@ Public Sub PopulateAspectGrid(chartID As Long)
           "INNER JOIN tblCelestialBodies AS cb1 ON ca.Body1ID=cb1.BodyID) " & _
           "INNER JOIN tblCelestialBodies AS cb2 ON ca.Body2ID=cb2.BodyID) " & _
           "INNER JOIN tblAspects         AS a   ON ca.AspectID = a.AspectID " & _
-          "WHERE ca.ChartID=" & chartID & ";"
+          "WHERE ca.ChartID=" & ChartID & ";"
     
     
     Set rs = db.OpenRecordset(sql)
@@ -321,7 +321,7 @@ Public Sub PopulateAspectGrid(chartID As Long)
     rs.Close
 
     ' Update caption
-    Set rs = db.OpenRecordset("SELECT ChartType, ChartDate FROM tblCharts WHERE ChartID=" & chartID)
+    Set rs = db.OpenRecordset("SELECT ChartType, ChartDate FROM tblCharts WHERE ChartID=" & ChartID)
     If Not rs.EOF Then
         frm.Caption = "Aspect Grid: " & rs!chartType & " - " & Format(rs!ChartDate, "mm/dd/yyyy")
     End If

@@ -41,7 +41,7 @@ Public Function GetOrCreateLocation(City As String, state As String, Country As 
             !City = City
             If state <> "" Then ![State/Province] = state
             !Country = Country
-            !latitude = lat
+            !Latitude = lat
             !longitude = lng
             !DateCreated = Now()
             !DateUpdated = Now()

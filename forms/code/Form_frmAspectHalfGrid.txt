@@ -31,10 +31,6 @@ Private m_SessionID As String
 Private Sub Form_Load()
     On Error GoTo ErrorHandler
     
-    Debug.Print "=== frmAspectGrid Form_Load ==="
-    Debug.Print "OpenArgs value: " & Nz(Me.openArgs, "NULL")
-    Debug.Print "OpenArgs is null: " & IsNull(Me.openArgs)
-    
     ' Get ChartID from OpenArgs parameter
     If Not IsNull(Me.openArgs) And Me.openArgs <> "" Then
         If IsNumeric(Me.openArgs) Then
@@ -67,8 +63,6 @@ End Sub
 Private Sub LoadChartData()
     On Error GoTo ErrorHandler
     
-    Debug.Print "Loading chart data for ChartID: " & m_ChartID & "   ChartType: " & m_ChartType
-    
     ' Load chart metadata
     LoadChartMetadata
     
@@ -78,12 +72,6 @@ Private Sub LoadChartData()
     
     ' ADD THIS LINE:
     PopulateGridHeaders
-    
-    ' Load planetary positions
-    'LoadPlanetaryPositions
-    
-    ' Load aspects
-    'LoadAspects
     
     ' Populate aspect grid
     PopulateAspectGrid
@@ -117,8 +105,6 @@ Private Sub LoadChartMetadata()
     
     Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
     
-     Debug.Print "SQL = " & sql
-
     If Not rs.EOF Then
         m_ChartType = Nz(rs!chartType, "Unknown")
         
@@ -204,8 +190,6 @@ Private Sub PopulateGridHeaders()
         ' Populate vertical header
         Me.Controls("sidebar_" & i).Caption = Nz(rs!symbol, Left(rs!BodyName, 2))
         
-        Debug.Print "Header " & i & ": " & rs!BodyName & " (" & Nz(rs!symbol, "No Symbol") & ")"
-        
         rs.MoveNext
         i = i + 1
     Loop
@@ -219,8 +203,6 @@ Private Sub PopulateGridHeaders()
     
     rs.Close
     Set db = Nothing
-    
-    Debug.Print "Grid headers populated successfully"
     
     Exit Sub
     
@@ -236,7 +218,7 @@ End Sub
 
 Private Sub PopulateAspectGrid()
     On Error GoTo ErrorHandler
-    
+
     Dim db As DAO.Database
     Dim rs As DAO.Recordset
     Dim rsBodyMap As DAO.Recordset
@@ -263,7 +245,6 @@ Private Sub PopulateAspectGrid()
     pos = 1
     Do While Not rsBodyMap.EOF And pos <= 18
         bodyPositions.Add pos, CStr(rsBodyMap!BodyID)
-        Debug.Print "Body mapping: BodyID " & rsBodyMap!BodyID & " -> Position " & pos
         rsBodyMap.MoveNext
         pos = pos + 1
     Loop
@@ -306,12 +287,10 @@ Private Sub PopulateAspectGrid()
             
             ' Set color based on aspect type
             Select Case UCase(Nz(rs!aspectType, ""))
-                Case "MAJOR"
-                    cellColor = RGB(255, 240, 240)  ' Light red for major aspects
-                Case "MINOR"
-                    cellColor = RGB(240, 255, 240)  ' Light green for minor aspects
-                Case Else
-                    cellColor = RGB(240, 240, 255)  ' Light blue for other aspects
+                Case "MAJOR": cellColor = RGB(255, 230, 230)   ' Soft red
+                Case "MINOR": cellColor = RGB(230, 255, 230)   ' Soft green
+                Case "HARMONIC": cellColor = RGB(230, 230, 255) ' Soft blue
+                Case Else: cellColor = RGB(240, 240, 240)        ' Default gray
             End Select
             
             ' Populate both cells (aspect works both ways)
@@ -321,9 +300,9 @@ Private Sub PopulateAspectGrid()
             Me.Controls("cell_" & body2Pos & "_" & body1Pos).value = aspectText
             Me.Controls("cell_" & body2Pos & "_" & body1Pos).backColor = cellColor
             
-            Debug.Print "Aspect: Body " & rs!body1ID & " (pos " & body1Pos & ") " & _
-                       rs!aspectSymbol & " Body " & rs!body2ID & " (pos " & body2Pos & ") = " & aspectText & _
-                       " (" & Nz(rs!aspectType, "Unknown") & ")"
+            Me.Controls("cell_" & body1Pos & "_" & body2Pos).ControlTipText = "Transit: " & rs!aspectSymbol & " " & "Orb: " & Format(rs!ExactDegree, "0.00") & "° " & IIf(rs!OrbitApplying, "(Applying)", "(Separating)") & " Type: " & rs!aspectType
+            Me.Controls("cell_" & body2Pos & "_" & body1Pos).ControlTipText = "Transit: " & rs!aspectSymbol & " " & "Orb: " & Format(rs!ExactDegree, "0.00") & "° " & IIf(rs!OrbitApplying, "(Applying)", "(Separating)") & " Type: " & rs!aspectType
+
         End If
         
         rs.MoveNext
@@ -331,8 +310,6 @@ Private Sub PopulateAspectGrid()
     
     rs.Close
     Set db = Nothing
-    
-    Debug.Print "Aspect grid populated successfully with color coding"
     
     Exit Sub
     
@@ -383,8 +360,6 @@ Private Sub FormatGridCells()
         Next j
     Next i
     
-    Debug.Print "Grid cells formatted successfully"
-    
     Exit Sub
     
 ErrorHandler:
@@ -430,8 +405,6 @@ Private Sub FormatGridHeaders()
             .BorderColor = RGB(128, 128, 128)  ' Gray border
         End With
     Next i
-    
-    Debug.Print "Grid headers formatted successfully"
     
     Exit Sub
     
@@ -512,9 +485,8 @@ Private Sub LoadEventInformation()
     Dim rs As DAO.Recordset
     Dim sql As String
 
-Me.lblHeaderLine1.Visible = False
-Me.lblHeaderLine2.Visible = False
-    
+    Me.lblHeaderLine1.Visible = False
+    Me.lblHeaderLine2.Visible = False
    
     Set db = CurrentDb()
     sql = "SELECT p.*, " & _
@@ -576,8 +548,6 @@ Me.lblHeaderLine2.Visible = True
          "LEFT JOIN tblEvents e ON s.EventID = e.EventID " & _
           "WHERE s.SessionID = " & m_SessionID
    
- Debug.Print "LoadSessionInformation sql: " & sql
-    
     Set rs = db.OpenRecordset(sql, dbOpenSnapshot)
     
     If Not rs.EOF Then
